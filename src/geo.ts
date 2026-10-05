@@ -48,6 +48,9 @@ export const CONGRESS_ROUTE: [number, number][] = [
   [-97.7424606, 30.2689964],
 ];
 
+export const ROAD_Y = 0.16;
+/** Stop short of the intersection so pickup/drop-off sit at the curb. */
+export const STOP_INSET = 22;
 export const PICKUP = { name: 'Congress & 2nd', lon: -97.7442121, lat: 30.2643199 };
 export const DROPOFF = { name: 'Congress & 7th', lon: -97.7424606, lat: 30.2689964 };
 
