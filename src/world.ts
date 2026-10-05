@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { Reflector } from 'three/addons/objects/Reflector.js';
 
 type Feature = { id?:number; name?:string; kind?:string; height?:number; levels?:number; lanes?:number; coordinates:number[][] };
 type MapData = { roads:Feature[]; buildings:Feature[]; water:Feature[] };
@@ -19,12 +20,14 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
     ctx.putImageData(pixels,0,0);
     if(kind==='asphalt') {ctx.strokeStyle='rgba(30,33,35,.27)';ctx.lineWidth=.6;for(let i=0;i<9;i++){ctx.beginPath();ctx.moveTo(seeded(i)*256,seeded(i+50)*256);ctx.lineTo(seeded(i+5)*256,seeded(i+63)*256);ctx.stroke();}}
     else {ctx.strokeStyle='rgba(105,101,94,.25)';ctx.lineWidth=1;ctx.strokeRect(.5,.5,255,255);ctx.strokeRect(.5,128,255,128);}
-    const texture=new THREE.CanvasTexture(canvas);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=4;return texture;
+    const texture=new THREE.CanvasTexture(canvas);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=8;return texture;
   }
   const asphaltTexture=surfaceTexture('asphalt'),stoneTexture=surfaceTexture('stone');
   // Sampling in world metres keeps grain consistent across all merged road segments.
-  function texturedMaterial(color:number,texture:THREE.Texture,scale:number,roughness:number) {
-    const material=new THREE.MeshStandardMaterial({color,map:texture,roughness});
+  function texturedMaterial(color:number,texture:THREE.Texture,scale:number,roughness:number,physical=false) {
+    const material=physical
+      ? new THREE.MeshPhysicalMaterial({color,map:texture,roughness,metalness:.16,envMapIntensity:1.05,clearcoat:.18,clearcoatRoughness:.45})
+      : new THREE.MeshStandardMaterial({color,map:texture,roughness});
     material.onBeforeCompile=shader=>{
       shader.vertexShader='varying vec3 vSurfacePosition;\n'+shader.vertexShader;
       shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
@@ -40,25 +43,26 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
         diffuseColor*=texture2D(map,surfaceUV*${scale.toFixed(4)});
         #endif`);
     };
-    material.customProgramCacheKey=()=>`world-surface-${scale}`;return material;
+    material.customProgramCacheKey=()=>`world-surface-${scale}-${physical?1:0}`;return material;
   }
-  const asphalt=texturedMaterial(0x626365,asphaltTexture,.22,.94);
+  const asphalt=texturedMaterial(0x4f5356,asphaltTexture,.18,.4,true);
   const pavement=texturedMaterial(0xc4bcae,stoneTexture,.32,.91);
   const curb=new THREE.MeshStandardMaterial({color:0xbab5a8,roughness:.88});
-  const metal=new THREE.MeshStandardMaterial({color:0x343b3b,metalness:.65,roughness:.36});
-  const stripe=new THREE.MeshStandardMaterial({color:0xdcd8c1,roughness:0.86});
-  const gold=new THREE.MeshStandardMaterial({color:0xd3ad61,roughness:0.8});
-  const lawn=new THREE.MeshStandardMaterial({color:0x586c47,roughness:1});
+  const metal=new THREE.MeshStandardMaterial({color:0x343b3b,metalness:.72,roughness:.32,envMapIntensity:.9});
+  const stripe=new THREE.MeshStandardMaterial({color:0xe8e4c8,roughness:0.55,envMapIntensity:.4});
+  const gold=new THREE.MeshStandardMaterial({color:0xd3ad61,roughness:0.55,metalness:.25});
+  const lawn=new THREE.MeshStandardMaterial({color:0x4e6840,roughness:.92});
   const trunk=new THREE.MeshStandardMaterial({color:0x685849,roughness:1});
-  const foliage=new THREE.MeshStandardMaterial({color:0x3c5743,roughness:1});
-  const waterMaterial=new THREE.MeshStandardMaterial({color:0x5c9997,metalness:0.55,roughness:0.2,transparent:true,opacity:0.94});
-  const carPaint=[0xe8e4dc,0x3d464b,0x657579,0x6b3430].map(color=>new THREE.MeshStandardMaterial({color,metalness:.48,roughness:.28}));
+  const foliage=new THREE.MeshStandardMaterial({color:0x3a5a3c,roughness:.78});
+  const leavesB=new THREE.MeshStandardMaterial({color:0x2f4a32,roughness:.82});
+  const waterMaterial=new THREE.MeshPhysicalMaterial({color:0x3e7f86,metalness:0.72,roughness:0.08,transparent:true,opacity:0.88,envMapIntensity:1.6,clearcoat:1,clearcoatRoughness:.12});
+  const carPaint=[0xe8e4dc,0x3d464b,0x657579,0x6b3430].map(color=>new THREE.MeshPhysicalMaterial({color,metalness:.72,roughness:.22,clearcoat:.6,clearcoatRoughness:.2,envMapIntensity:1.1}));
   const tireMaterial=new THREE.MeshStandardMaterial({color:0x181a1b,roughness:.87});
-  const carLamp=new THREE.MeshStandardMaterial({color:0xe7dfc5,emissive:0xddd1a8,emissiveIntensity:.16,roughness:.22});
-  const windowMaterial=new THREE.MeshStandardMaterial({color:0x3b555b,metalness:.82,roughness:.19});
-  const glassMaterials=[0x263c43,0x44616b,0x76918d,0x334954].map(color=>new THREE.MeshStandardMaterial({color,metalness:.72,roughness:.2}));
-  const frame=new THREE.MeshStandardMaterial({color:0x555d5c,metalness:.65,roughness:.35});
-  const litWindow=new THREE.MeshStandardMaterial({color:0xe9ce99,emissive:0xd6a55c,emissiveIntensity:0.38,roughness:0.35});
+  const carLamp=new THREE.MeshStandardMaterial({color:0xe7dfc5,emissive:0xddd1a8,emissiveIntensity:.35,roughness:.22});
+  const windowMaterial=new THREE.MeshPhysicalMaterial({color:0x3b555b,metalness:.2,roughness:.06,transparent:true,opacity:.55,envMapIntensity:1.5,transmission:.35,thickness:.4});
+  const glassMaterials=[0x263c43,0x44616b,0x76918d,0x334954].map(color=>new THREE.MeshPhysicalMaterial({color,metalness:.25,roughness:.08,envMapIntensity:1.45,transparent:true,opacity:.72}));
+  const frame=new THREE.MeshStandardMaterial({color:0x555d5c,metalness:.7,roughness:.32});
+  const litWindow=new THREE.MeshStandardMaterial({color:0xe9ce99,emissive:0xd6a55c,emissiveIntensity:0.55,roughness:0.35});
   const buildingMaterials=[0xd5cbb9,0xb4b8b4,0xb9beb8,0xc4b29c,0x6f8286,0x8f9c9d].map(color=>texturedMaterial(color,stoneTexture,.17,.78));
   const ground=new THREE.Mesh(new THREE.PlaneGeometry(12000,12000),new THREE.MeshStandardMaterial({color:0x7d8270,roughness:1})); ground.rotation.x=-Math.PI/2; ground.position.y=-0.6; ground.receiveShadow=true; root.add(ground);
   const boxGeometry=new THREE.BoxGeometry(1,1,1);
@@ -74,11 +78,12 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
     const geo=new THREE.ExtrudeGeometry(shape,{depth:height,bevelEnabled:false});geo.rotateX(-Math.PI/2);
     const m=new THREE.Mesh(geo,material);m.position.y=base;m.castShadow=height>1;m.receiveShadow=true;parent.add(m);return {m,pts};
   }
-  const treeGeometry=new THREE.IcosahedronGeometry(1,1);
+  const treeGeometry=new THREE.IcosahedronGeometry(1,2);
   function tree(parent:THREE.Object3D,x:number,z:number,seed:number) {
-    const h=5+seeded(seed)*5;
-    box(parent,x,h*.35,z,.32,h*.7,.32,trunk);
-    const crown=new THREE.Mesh(treeGeometry,foliage);crown.position.set(x,h,z);crown.scale.set(h*.48,h*.55,h*.48);crown.rotation.y=seed; crown.castShadow=true;parent.add(crown);
+    const h=6+seeded(seed)*6;
+    box(parent,x,h*.38,z,.28,h*.76,.28,trunk);
+    const crown=new THREE.Mesh(treeGeometry,foliage);crown.position.set(x,h,z);crown.scale.set(h*.52,h*.58,h*.52);crown.rotation.y=seed; crown.castShadow=true;parent.add(crown);
+    const canopy=new THREE.Mesh(treeGeometry,leavesB);canopy.position.set(x+h*.12,h*.78,z-h*.08);canopy.scale.set(h*.38,h*.32,h*.4);canopy.castShadow=true;parent.add(canopy);
   }
   let junctions:THREE.Vector2[]=[];
   function nearJunction(p:THREE.Vector2,radius=15) {return junctions.some(j=>j.distanceToSquared(p)<radius*radius);}
@@ -244,6 +249,8 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
     }
     junctions=[...nodes.values()].filter(n=>n.names.size>1).map(n=>n.point);
     for(const w of data.water||[])polygon(city,w.coordinates,.08,waterMaterial,-.17);
+    const lake=new Reflector(new THREE.PlaneGeometry(2400,520),{textureWidth:1024,textureHeight:512,color:0x4a7f86,clipBias:.003});
+    lake.rotation.x=-Math.PI/2;lake.position.set(80,-0.05,320);city.add(lake);
     (data.buildings||[]).forEach((b,i)=>building(city,b,i));
     (data.roads||[]).forEach(r=>road(city,r));
     streetIntersection(city,point([-97.7442121,30.2643199]));
@@ -291,7 +298,7 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
     }
     const solids=new Map<THREE.Material,THREE.Mesh[]>();
     for(const child of [...city.children]) {
-      if(child instanceof THREE.Mesh && !(child instanceof THREE.InstancedMesh) && child.material!==waterMaterial && child.material!==congressSign && child.material!==secondSign) {
+      if(child instanceof THREE.Mesh && !(child instanceof THREE.InstancedMesh) && !(child instanceof Reflector) && child.material!==waterMaterial && child.material!==congressSign && child.material!==secondSign) {
         const material=child.material as THREE.Material;
         const list=solids.get(material)||[];list.push(child);solids.set(material,list);
       }
