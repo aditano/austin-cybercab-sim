@@ -1,8 +1,10 @@
 # Cybercab reference notes
 
-Original model notes for `build.py`. This is an artistic reconstruction for an independent simulator, not manufacturer CAD and not a Tesla product. No badges, wordmarks, or logos are modeled.
+Photo-fit model for the Austin sim. It is an artistic reconstruction, not manufacturer CAD and not a Tesla product. No badges, wordmarks, or logos are modeled.
 
-Reference photos were studied locally and are not committed. Primary views: Steve Jurvetson’s We, Robot set (Wikimedia, CC BY 2.0: front, rear, interior), the Santana Row showroom side and open-door views (CC BY-SA 4.0), the June 2026 San Francisco street profile (CC BY 4.0), and the July 2025 open-door rear three-quarter.
+The body is a parametric surface (`surface.py`: PCHIP profiles and centripetal Catmull-Rom sections), solidified and boolean-cut in Blender 5.2. Node names, the door clip, and the light segments are in [MODEL_NOTES.md](MODEL_NOTES.md). The photo index is [index.md](index.md). Observed light behavior is in [lights.md](lights.md).
+
+Reference photos (28 stills and 8 clips) are not committed. The index lists the public sources, including Steve Jurvetson’s We, Robot set (Wikimedia, CC BY 2.0), the Santana Row showroom views (CC BY-SA 4.0), and the June 2026 San Francisco street profile (CC BY 4.0).
 
 ## Published dimensions
 
@@ -16,73 +18,43 @@ From Tesla’s Cybercab rider guide “Dimensions and Specifications” (checked
 | Step-in height | 414 mm (16.3 in); the FAQ also lists 16.5 in |
 | Rear trunk | 572 L (20.2 cu ft) |
 
-Length, wheelbase, and track are not in that table.
+Length and wheelbase are not in that table.
 
-## Estimated dimensions used by the model
+## Dimensions in the glTF
 
-Length is the Tailosive EV tape figure of about 175 in (4.45 m) against a Model 3, cross-checked on the San Francisco side photo. On that photo the body is roughly 3.1 times as long as it is tall, which at 1,408 mm is about 4.35 m. The model uses a **4.38 m** overall length (nose to the kamm face).
+Y-up, meters, nose toward −Z, ground at local y = 0. The mesh bounds are about 1.77 m wide, 1.408 m tall, and 4.35 m long. The body clears the ground by about 155 mm. Hubs sit at y = 0.372, which is the tire radius, so the tread meets y = 0. The sim places the cab group at `ROAD_Y` (0.16) and does not scale the model.
 
-Wheel centers on the same photo sit about 4.4 tire-diameters apart. With a tire outside diameter of 0.66 m (a large aero-covered wheel under a 1.41 m roof), the wheelbase is **2.86 m**. Front overhang to the axle is about 0.72 m; rear overhang about 0.82 m. Track is **1.60 m** so the 0.66 m tires sit flush in the 1.754 m arches.
+| Measure | Model value |
+| --- | --- |
+| Length | 4.35 m |
+| Width | 1.77 m |
+| Height | 1.408 m |
+| Wheelbase | 2.635 m (front axle z = −1.36, rear z = 1.275) |
+| Track | 1.456 m (hubs at x = ±0.728) |
+| Tire radius | 0.372 m |
 
-| Measure | Model value | Status |
-| --- | --- | --- |
-| Length | 4.38 m | estimate |
-| Width | 1.754 m | published |
-| Height | 1.408 m | published |
-| Ground clearance | 0.15 m | published, rounded |
-| Wheelbase | 2.86 m | estimate |
-| Front axle from nose | 0.72 m | estimate |
-| Track | 1.60 m | estimate, flush in the arches |
-| Tire outside diameter | 0.66 m | estimate |
-| Step-in / rocker top | ~0.40 m | near the published 414 mm |
+## What the sim drives
 
-Axes in the Blender file: +Y nose, +Z up, +X right. The glTF exporter maps that to glTF/Three.js +X right, +Y up, −Z nose, which matches the sim.
-
-## Form
-
-Two-seat closed coupe. The silhouette is a low fastback, not an open roadster and not a glass bubble.
-
-- Nose: wide, smooth, and rounded in plan and elevation. A thin full-width lamp sits in a shallow channel and wraps slightly into the fenders. The lower chin is satin black.
-- Hood: short and low, flowing into a steep windshield.
-- Roof: body-colored. It peaks just aft of the windshield header (about 42% back from the nose) and falls in one curve to a short tail. No rear window.
-- Greenhouse: dark windshield plus one dark side window per door. The roof panel above the glass is paint, so the cabin reads as a hardtop.
-- Tail: upright wrapped kamm. The roof holds its height, then the last stretch is pulled into a short vertical face. The red lamp runs the face and turns onto both quarters; a lower red strip does the same. Black rear bumper and a centered plate.
-- Side: smooth shoulder, black rocker, large circular wheel openings, one large raked side window per door. Butterfly doors are hinged on a straight axis along the roof rail (not the centerline).
-- Front: thin white light bar in a dark channel, corners rising into a smile. The black chin’s lower edge rises toward the corners and wraps the fenders.
-- Wheels: champagne outer aero disc, satin dark-grey turbine dish with eight low blades, and a black tire with tread grooves and a visible sidewall. The cover face sits just inside the arch lip. No side mirrors. Small camera pods on the front fenders and one at the tail.
-
-Door swing in the show photos is well past horizontal. The hinge opens 1.95 rad (about 112°) on a bezier arc from the closed side panel. Each door is a 22 mm shell with a dark inner face, a leather card with an armrest swell, and dark tinted glass. The windshield header is covered by a wider black bezel. Seats are bolstered leather buckets; the headrest is part of the back, with stitches following the cushion and the back.
-
-## Materials
-
-Chosen for glTF PBR (`KHR_materials_clearcoat`, `KHR_materials_transmission`, `KHR_materials_ior`, `KHR_materials_emissive_strength`), which Three.js r180 reads into `MeshPhysicalMaterial`.
-
-| Surface | Intent | Principled settings |
-| --- | --- | --- |
-| Champagne paint | Warmer metallic than the showroom cream, with a clearcoat. Sunlit door sample on the San Francisco profile is about `#DAB070`; the albedo is `#C4A15C` so reflections, not the diffuse, carry the highlight | Base `#C4A15C`, metallic 0.82, roughness 0.22, coat weight 1, coat roughness 0.055, coat IOR 1.5. The sim sets paint `envMapIntensity` to 2.1 |
-| Windshield | Dark tint, road still readable from the seat | Transmission 0.72, IOR 1.52, roughness 0.03, base `#0E242C`. The loader sets thickness 0.045 and attenuation |
-| Side glass | Much darker than the windshield, with an opaque black shade behind the pane | Transmission 0.12, IOR 1.52, roughness 0.04, base `#05080A`, attenuation distance 0.22 |
-| Rocker, chin, bumper, arch lips, shut reveal | Satin black | Metallic 0.08, roughness 0.46, `#141618` |
-| Aero outer ring | Champagne, satin | `#C6A56A`, metallic 0.62, roughness 0.32, coat 0.55 |
-| Aero turbine | Satin dark grey | `#3A3D42`, metallic 0.55, roughness 0.38 |
-| Tires | Rubber with tread grooves | Roughness 0.86, `#16181A` |
-| Front lamp | Crisp emissive white. The sim tints it violet only while the Megalamp is the match signal | Emission `#FFFFFF`, strength 22 |
-| Rear lamp | Emissive red, wrapped | `#FF2A22`, strength 14 |
-| Seats | Dark leather | `#1C1F24`, roughness 0.38, sheen 0.45, coat 0.18 |
-| Headliner | Light cloth | `#E4E0D6` |
-| Dash | Light, with a thin warm accent | `#D9D4C8`, accent `#8C6844` |
-| Carpet | Black | `#1A1C1E` |
-
-The real body color is often described as molded-in rather than a deep wet clear. The clearcoat is kept low-roughness so studio and street reflections read as paint, while base roughness stays high enough that the car does not look chrome.
-
-## Interior
-
-Two forward-facing seats, no wheel and no pedals. Center console with two cup holders, a landscape center display, a low dash with a thin warm accent, carpeted floor, light headliner, door cards with armrests, and three-point belts. The curb-side door is the sim’s +X door.
+- `door-hinge-r` and `door-hinge-l` sample the `door_open` quaternion clip. Only the curb side (+X) opens. The stroke is 1.5 s.
+- `wheel-spin-fr|fl|rr|rl` roll about local X with speed. `wheel-steer-fr|fl` steer about Y. Positive steer is a left turn.
+- The `lights` node holds six segments per side. Front white and rear red stay on. Brake, turn, and teal segments start at scale 0.001. The sim scales those nodes from ride state instead of playing the finite light clips.
+- Rear turn segments are the outer three. The sim hides the tail under them and tints the overlay amber so the blink reads in daylight.
+- The Texas plate and the soft contact shadow are added in `src/vehicle.ts`. The glTF has no plate mesh.
 
 ## Rebuild
 
+Authoring uses Blender 5.2. The scripts default to an external tree (`/workspace/cybercab-blender`) and a local photo folder (`/workspace/cybercab-ref`). Those paths are not the sim runtime.
+
 ```sh
-blender --background --python tools/cybercab/build.py -- --beauty
+blender -b --factory-startup --python tools/cybercab/build.py -- --out /tmp/cybercab-out
 ```
 
-The script writes `public/models/cybercab.glb` and PNG stills under `tools/cybercab/renders/`. `--beauty` is the Cycles beauty pass and lights the world with `public/textures/evening_road_01_puresky_1k.hdr` (the same HDRI as the sim), AgX, 64 samples. This Blender build has no OIDN denoiser. The flag is `--beauty` rather than `--cycles` because Blender reserves the `--cycles` prefix for its own device arguments. The default engine is Workbench for shape checks. Draco is not linked in Ubuntu’s Blender 4.0.2 package. When `gltfpack` is on `PATH` the script meshopt-compresses the GLB; otherwise run `npx @gltf-transform/cli meshopt public/models/cybercab.glb public/models/cybercab.glb`. Do not run `gltf-transform optimize` — joining and simplifying collapses the wheel and door nodes.
+That writes `cybercab.blend` and `cybercab.glb`. `round.sh`, `finals.sh`, and `lights_renders.sh` are comparison-render helpers for that authoring tree.
+
+Compress the glTF without joining or simplifying. `gltf-transform optimize` collapses the wheel and door nodes.
+
+```sh
+npx @gltf-transform/cli meshopt public/models/cybercab.glb public/models/cybercab.glb --level high --quantize-position 16 --quantize-normal 12
+```
+
+Quantization inserts unnamed child meshes and a dequantization scale. Keep the named hinge, steer, spin, and lamp parents. Scale and rotate those parents, not the unnamed children.

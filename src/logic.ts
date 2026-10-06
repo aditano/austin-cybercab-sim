@@ -74,8 +74,18 @@ export type RideSnapshot = {
 
 const RESTORABLE: readonly RestorablePhase[] = ['dispatch', 'pickup', 'boarded', 'ride', 'arrived', 'exited'];
 
-/** Local Y swing authored by tools/cybercab/build.py `key_open`. Right opens positive, left negative. */
-export const DOOR_SWING = 1.95;
+/**
+ * Full butterfly stroke, in seconds. The show car closes in about 1.5 s
+ * (Tesla tutorial, source 0:42.6–0:44.1). The glTF `door_open` clip is the pose.
+ */
+export const DOOR_STROKE_S = 1.5;
+
+/** Rear blink measured on the We, Robot show car: ~0.42 s on, ~0.25 s off. */
+export const BLINK_ON_S = 0.42;
+export const BLINK_OFF_S = 0.25;
+
+/** Tire radius of the bundled glTF. Hubs sit at y = 0.372, so the tread meets y = 0. */
+export const TIRE_RADIUS_M = 0.372;
 
 export const DESTINATIONS: { id: string; name: string; lon: number; lat: number }[] = [
   { id: 'congress', name: 'Congress & 7th', lon: -97.7424606, lat: 30.2689964 },
@@ -94,9 +104,94 @@ export function pointInRing(lon: number, lat: number, ring: readonly (readonly [
   return inside;
 }
 
-export function doorAngle(side: 'r' | 'l', open: number): number {
-  const amount = Math.min(1, Math.max(0, open));
-  return (side === 'r' ? 1 : -1) * amount * DOOR_SWING;
+export function doorTarget(phase: string, elapsed: number, belted: boolean, doorRequested: boolean): number {
+  if ((phase === 'pickup' && elapsed > 0.2) || (phase === 'boarded' && !belted)) return 1;
+  if ((phase === 'arrived' || phase === 'exited') && doorRequested) return 1;
+  return 0;
+}
+
+/** Linear stroke. Reduced motion snaps. Closing from open takes DOOR_STROKE_S. */
+export function stepDoor(open: number, target: number, dt: number, snap: boolean): number {
+  const clamped = Math.min(1, Math.max(0, open));
+  const goal = Math.min(1, Math.max(0, target));
+  if (snap) return goal;
+  const step = Math.max(0, dt) / DOOR_STROKE_S;
+  if (goal >= clamped) return Math.min(goal, clamped + step);
+  return Math.max(goal, clamped - step);
+}
+
+export function blinkLit(time: number): boolean {
+  const on = Math.round(BLINK_ON_S * 1000);
+  const period = on + Math.round(BLINK_OFF_S * 1000);
+  const ms = Math.round(time * 1000);
+  const wrapped = ((ms % period) + period) % period;
+  return wrapped < on;
+}
+
+/** Radians added to the local +X axle. Negative X rolls a nose-forward (-Z) car ahead. */
+export function wheelRoll(speed: number, dt: number, radius = TIRE_RADIUS_M): number {
+  if (speed === 0 || dt === 0) return 0;
+  return -speed * dt / radius;
+}
+
+/** Positive steer is a left turn (positive yaw). Positive curbRate is a pull toward the right curb. */
+export function steerTarget(yawRate: number, curbRate: number, speed: number): number {
+  if (speed <= 0.45) return 0;
+  const fromYaw = Math.min(0.42, Math.max(-0.42, yawRate * 0.16));
+  const fromCurb = Math.min(0.28, Math.max(-0.28, -curbRate * 0.4));
+  return Math.min(0.45, Math.max(-0.45, fromYaw + fromCurb));
+}
+
+/** Centre-out running-light scale. Segment 1 is the centre, 6 is the outer end. */
+export function wakeSegmentScale(segment: number, time: number, delay = 0): number {
+  const index = Math.min(6, Math.max(1, segment));
+  const start = delay + (index - 1) * 0.12;
+  const t = (time - start) / 0.2;
+  if (t <= 0) return 0.001;
+  if (t >= 1) return 1;
+  const smooth = t * t * (3 - 2 * t);
+  return 0.001 + 0.999 * smooth;
+}
+
+export function shouldWake(prev: string, next: string): boolean {
+  if (!next || prev === next) return false;
+  return next === 'dispatch' || next === 'pickup' || next === 'arrived';
+}
+
+export type TurnSignal = 'left' | 'right' | 'none';
+
+export type VehicleCues = {
+  phase: string;
+  speed: number;
+  accel: number;
+  yawRate: number;
+  curbRate: number;
+};
+
+export type VehicleSignals = {
+  match: boolean;
+  pickup: boolean;
+  hazard: boolean;
+  brake: boolean;
+  turn: TurnSignal;
+};
+
+export function vehicleSignals(cues: VehicleCues): VehicleSignals {
+  const hazard = cues.phase === 'pickup' || cues.phase === 'boarded' || cues.phase === 'arrived' || cues.phase === 'exited';
+  const pickup = cues.phase === 'pickup' || cues.phase === 'boarded';
+  const match = cues.phase === 'dispatch';
+  const brake = cues.accel < -0.75 && cues.speed > 0.35;
+  let turn: TurnSignal = 'none';
+  if (!hazard && cues.speed > 0.45) {
+    let score = 0;
+    if (cues.yawRate > 0.05) score += 1;
+    else if (cues.yawRate < -0.05) score -= 1;
+    if (cues.curbRate > 0.04) score -= 1;
+    else if (cues.curbRate < -0.04) score += 1;
+    if (score > 0) turn = 'left';
+    else if (score < 0) turn = 'right';
+  }
+  return { match, pickup, hazard, brake, turn };
 }
 
 export function isQuality(value: string): value is Quality {

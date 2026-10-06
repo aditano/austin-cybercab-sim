@@ -17,9 +17,9 @@ import {
   PICKUP, ROAD_Y, STOP_INSET, VEHICLE_LABEL, VEHICLE_PLATE, measurePath, pointInRing, project, samplePath,
 } from './geo';
 import {
-  DESTINATIONS, GRAPHICS_KEY, QUALITY_LABEL, adaptQuality, blockedSpeed,
+  DESTINATIONS, GRAPHICS_KEY, QUALITY_LABEL, adaptQuality, blockedSpeed, doorTarget,
   emptyAdaptState, graphicsFor, parseGraphicsStore, parseSnapshot, pixelRatioFor, resolvedQuality,
-  togglePhone, type GraphicsToggles, type Quality, type QualityMode, type RideSnapshot,
+  stepDoor, togglePhone, type GraphicsToggles, type Quality, type QualityMode, type RideSnapshot,
 } from './logic';
 import './style.css';
 
@@ -194,6 +194,8 @@ let mapOverview = true;
 let doorRequested = false;
 let hold = 0;
 let curbState = 0;
+let appliedCurb = 0;
+let prevAppliedCurb = 0;
 let destinationId = 'congress';
 const storedGraphics = (() => {
   try { return parseGraphicsStore(localStorage.getItem(GRAPHICS_KEY)); } catch { return null; }
@@ -315,6 +317,8 @@ function showGpuFailure(message: string) {
 }
 
 function setPhase(next: Phase) {
+  const prev = phase;
+  if (next === 'ride' && prev === 'boarded') curbState = CURB_PULL;
   phase = next;
   elapsed = 0;
   if (next === 'arrived' || next === 'exited' || next === 'complete') phoneVisible = true;
@@ -331,9 +335,7 @@ function toast(text: string) {
 }
 
 function lampForPhase() {
-  const match = phase === 'dispatch' || phase === 'pickup' || (phase === 'boarded' && !belted);
-  cab.setLamp(match ? 'match' : 'idle');
-  cab.setHazards(phase === 'pickup' || phase === 'arrived' || phase === 'exited');
+  cab.setPhase(phase);
 }
 
 function matchCard() {
@@ -372,7 +374,7 @@ function renderUI() {
   if (phase === 'dispatch') body.innerHTML = `<h2>On the way.</h2><p class="phone-sub">Match the front light bar and the plate before you get in.</p>${map}
     <p class="vehicle-kicker">${VEHICLE_LABEL}</p>${matchCard()}
     <button class="secondary" id="cancel" type="button">Cancel request</button>${walkBtn}`;
-  if (phase === 'pickup') body.innerHTML = `<h2>Your Cybercab has arrived.</h2><p class="phone-sub">At the curb. Hazards are on. Match the front light bar, then the plate.</p>${map}
+  if (phase === 'pickup') body.innerHTML = `<h2>Your Cybercab has arrived.</h2><p class="phone-sub">At the curb. Hazards are on and the front bar glows teal. Confirm the plate against the app.</p>${map}
     <p class="arrive-distance">At the east curb</p>${matchCard()}
     <button class="primary" id="enter" type="button">Enter <span>→</span></button>
     <button class="secondary" id="cancel" type="button">Cancel ride</button>${walkBtn}`;
@@ -796,6 +798,7 @@ function placeCab(d: number, curb = 0) {
   if (curb) cab.group.position.add(curbShift(d, curb));
   cab.group.position.y = ROAD_Y;
   cab.group.rotation.y = p.heading;
+  appliedCurb = curb;
 }
 function update(dt: number) {
   elapsed += dt;
@@ -856,11 +859,14 @@ function update(dt: number) {
     placeCab(dropoffDist, CURB_PULL);
     speedMps = 0;
   }
-  const wantDoor = (phase === 'pickup' && elapsed > 0.35) || (phase === 'boarded' && !belted) || ((phase === 'arrived' || phase === 'exited') && doorRequested) ? 1 : 0;
-  door = reduceMotion ? wantDoor : THREE.MathUtils.damp(door, wantDoor, 3.2, dt);
+  const wantDoor = doorTarget(phase, elapsed, belted, doorRequested);
+  door = stepDoor(door, wantDoor, dt, reduceMotion);
+  const curbRate = (appliedCurb - prevAppliedCurb) / Math.max(dt, 1e-4);
+  prevAppliedCurb = appliedCurb;
+  cab.setPhase(phase);
   cab.setDoor(door, 1);
   cab.setCabinView(cam === 'cabin');
-  cab.update(dt, speedMps, camera.position.distanceTo(cab.group.position));
+  cab.update(dt, speedMps, camera.position.distanceTo(cab.group.position), curbRate);
   cab.group.updateMatrixWorld();
   updateCamera(dt);
   sun.position.copy(cab.group.position).add(sunOffset);
@@ -938,6 +944,7 @@ function restoreRide() {
     walk.y = ROAD_Y + 1.62;
   } else cam = 'chase';
   const atCurb = saved.phase === 'pickup' || saved.phase === 'boarded' || saved.phase === 'arrived' || saved.phase === 'exited';
+  if (atCurb) curbState = CURB_PULL;
   placeCab(distance, atCurb ? CURB_PULL : 0);
 }
 
@@ -969,6 +976,9 @@ function mountCab(loaded: Cybercab) {
       doorLift: Number(doorBox.lift.toFixed(3)),
       doorTop: Number(doorBox.top.toFixed(3)),
       doorSpan: Number(doorBox.span.toFixed(3)),
+      lights: cab.lightState(),
+      wheelSpin: Number(cab.wheelSpin().toFixed(4)),
+      wheelSteer: Number(cab.wheelSteer().toFixed(4)),
       speedMph: Math.round(speedMps * 2.23694),
     });
     },
