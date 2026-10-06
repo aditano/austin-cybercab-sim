@@ -15,3 +15,43 @@
 
 #toast.show{opacity:1;transform:translate(-50%,0)}[hidden]{display:none!important}
 @media(max-width:900px){.hud{display:none}}
+
+.hud{left:42px;right:auto;bottom:176px}
+.phone-sub,.micro,.geo-note{color:#3e4a44}
+.chip.out{background:#f3d6d2;color:#8a2e24}
+.fare{gap:12px}
+.fare-name{white-space:nowrap}
+.dest-label{display:block;margin:10px 0 4px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:#3e4a44}
+.dest-label select{display:block;width:100%;margin-top:6px;padding:10px 12px;border:1px solid #cdd4cb;border-radius:8px;background:#fff;color:#252a27;font:600 14px/1.3 inherit}
+.location,.chapter,.controls,.concept,.live,.brand{text-shadow:0 1px 2px #000c}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+#stick{position:fixed;z-index:6;left:max(16px,env(safe-area-inset-left));bottom:max(22px,env(safe-area-inset-bottom));width:112px;height:112px;border-radius:50%;background:#0e1518cc;border:1px solid #ffffff66;touch-action:none}
+#nub{position:absolute;left:36px;top:36px;width:40px;height:40px;border-radius:50%;background:#f4efe4}
+#show-phone{position:fixed;z-index:6;right:max(12px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));min-height:44px;padding:12px 16px;border-radius:999px;background:#283c2e;color:#fff}
+#gpu-failure{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:24px;background:#141a16ee;color:#f4efe4;text-align:center}
+#gpu-failure button{margin-top:12px;padding:12px 16px;border-radius:8px;background:#d7c48a;color:#1c241c}
+header{padding-top:max(30px,env(safe-area-inset-top));padding-left:max(42px,env(safe-area-inset-left));padding-right:max(42px,env(safe-area-inset-right))}
+footer{bottom:max(29px,env(safe-area-inset-bottom));left:max(42px,env(safe-area-inset-left));right:max(42px,env(safe-area-inset-right))}
+@media(pointer:coarse){.primary,.secondary{min-height:44px}.round{width:44px;height:44px}}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
+@media(max-width:800px){
+  body:has(#cabin:not([hidden])) #phone{display:none!important}
+  .cabin-panel{max-height:min(360px,62dvh);overflow:auto}
+  .cabin-map{display:none}
+  .cabin-grid{grid-template-columns:1fr}
+}
+@media(max-width:720px),(max-height:520px){
+  .phone{top:auto;bottom:max(10px,env(safe-area-inset-bottom));right:max(10px,env(safe-area-inset-right));width:min(340px,calc(100vw - 20px));height:min(640px,calc(100dvh - 108px));transform:none}
+  .phone .map{height:92px}
+  .phone h2{margin:8px 0 4px;font-size:22px}
+  .phone-sub{margin-bottom:8px}
+  .phone-content{padding:8px 14px 12px}
+  .location{display:none}
+}
+@media(max-height:520px){
+  .chapter{display:none!important}
+  .phone .map,.phone .micro,.phone .route-card,.phone-sub{display:none}
+  .phone h2{font-size:18px;margin:2px 0}
+  .fare{margin:8px 0}
+  .geo-note{margin-bottom:6px}
+}
