@@ -153,6 +153,17 @@ export function wakeSegmentScale(segment: number, time: number, delay = 0): numb
   return 0.001 + 0.999 * smooth;
 }
 
+const TURN_HOLD_S = 2.4;
+
+/** Keep a blinker lit through a short lane-change, then let it go. Hazards clear it. */
+export function holdTurn(turn: TurnSignal, held: TurnSignal, remaining: number, dt: number, hazard: boolean): { turn: TurnSignal; held: TurnSignal; remaining: number } {
+  if (hazard) return { turn: 'none', held: 'none', remaining: 0 };
+  if (turn !== 'none') return { turn, held: turn, remaining: TURN_HOLD_S };
+  const left = remaining - Math.max(0, dt);
+  if (left > 0 && held !== 'none') return { turn: held, held, remaining: left };
+  return { turn: 'none', held: 'none', remaining: 0 };
+}
+
 export function shouldWake(prev: string, next: string): boolean {
   if (!next || prev === next) return false;
   return next === 'dispatch' || next === 'pickup' || next === 'arrived';
@@ -183,13 +194,11 @@ export function vehicleSignals(cues: VehicleCues): VehicleSignals {
   const brake = cues.accel < -0.75 && cues.speed > 0.35;
   let turn: TurnSignal = 'none';
   if (!hazard && cues.speed > 0.45) {
-    let score = 0;
-    if (cues.yawRate > 0.05) score += 1;
-    else if (cues.yawRate < -0.05) score -= 1;
-    if (cues.curbRate > 0.04) score -= 1;
-    else if (cues.curbRate < -0.04) score += 1;
-    if (score > 0) turn = 'left';
-    else if (score < 0) turn = 'right';
+    // A curb pull is the lane change. It wins over the avenue's small heading wobble.
+    if (cues.curbRate > 0.04) turn = 'right';
+    else if (cues.curbRate < -0.04) turn = 'left';
+    else if (cues.yawRate > 0.05) turn = 'left';
+    else if (cues.yawRate < -0.05) turn = 'right';
   }
   return { match, pickup, hazard, brake, turn };
 }

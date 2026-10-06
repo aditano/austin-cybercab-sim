@@ -4,7 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { MEGALAMP, VEHICLE_PLATE } from './geo';
 import {
-  blinkLit, shouldWake, steerTarget, vehicleSignals, wakeSegmentScale, wheelRoll,
+  blinkLit, holdTurn, shouldWake, steerTarget, vehicleSignals, wakeSegmentScale, wheelRoll,
   type TurnSignal, type VehicleSignals,
 } from './logic';
 
@@ -152,7 +152,7 @@ export async function loadCybercab() {
   if (!tealMesh) throw new Error('Cybercab is missing the teal pickup bar');
   const tealMat = cloneStandard(tealMesh, 'lamp-front-teal');
   const tealColor = tealMat.emissive.clone();
-  tealMat.emissiveIntensity = Math.max(tealMat.emissiveIntensity, 28);
+  tealMat.emissiveIntensity = 2.2;
   tealMat.toneMapped = false;
   for (const seg of lamps) {
     if (seg.kind !== 'teal') continue;
@@ -164,27 +164,46 @@ export async function loadCybercab() {
   const brakeMesh = meshesUnder(lamps.find((seg) => seg.kind === 'brake')?.node ?? group)[0];
   if (!frontTurnMesh || !rearTurnMesh || !brakeMesh) throw new Error('Cybercab is missing turn or brake segments');
   const frontTurnMat = cloneStandard(frontTurnMesh, 'lamp-turn-amber');
-  frontTurnMat.emissiveIntensity = Math.max(frontTurnMat.emissiveIntensity, 36);
+  frontTurnMat.emissiveIntensity = 8;
   frontTurnMat.toneMapped = false;
   const rearTurnMat = cloneStandard(rearTurnMesh, 'lamp-turn-rear');
   // The real outer blink is red and disappears on a lit tail in daylight.
   // Hide the tail underneath and flash these ends amber so the signal reads.
   rearTurnMat.color.setHex(0xff7a12);
   rearTurnMat.emissive.setHex(0xff8a1e);
-  rearTurnMat.emissiveIntensity = Math.max(rearTurnMat.emissiveIntensity, 42);
+  rearTurnMat.emissiveIntensity = 7;
   rearTurnMat.toneMapped = false;
   const brakeMat = cloneStandard(brakeMesh, 'lamp-brake');
-  brakeMat.emissiveIntensity = Math.max(brakeMat.emissiveIntensity, 48);
+  brakeMat.emissiveIntensity = 6;
   brakeMat.toneMapped = false;
   for (const mat of [tealMat, frontTurnMat, rearTurnMat, brakeMat]) {
     mat.polygonOffset = true;
     mat.polygonOffsetFactor = -2;
     mat.polygonOffsetUnits = -2;
   }
+  // Overlays are authored a fraction of a millimetre proud. Quantization flattens
+  // that, so they z-fight the bar. Push them out along the nose axis.
+  for (const seg of lamps) {
+    if (seg.kind === 'brake') seg.node.position.z += 0.01;
+    else if (seg.kind === 'rear-turn') seg.node.position.z += 0.016;
+    else if (seg.kind === 'teal') seg.node.position.z -= 0.01;
+    else if (seg.kind === 'front-turn') seg.node.position.z -= 0.016;
+  }
   for (const seg of lamps) {
     const mat = seg.kind === 'front-turn' ? frontTurnMat : seg.kind === 'rear-turn' ? rearTurnMat : seg.kind === 'brake' ? brakeMat : null;
     if (!mat) continue;
     for (const mesh of meshesUnder(seg.node)) mesh.material = mat;
+  }
+  const rearMesh = meshesUnder(lamps.find((seg) => seg.kind === 'rear')?.node ?? group)[0];
+  if (!rearMesh) throw new Error('Cybercab is missing the rear light bar');
+  const rearMat = cloneStandard(rearMesh, 'lamp-rear');
+  const rearColor = rearMat.color.clone();
+  const rearEmissive = rearMat.emissive.clone();
+  const rearRest = 3.4;
+  rearMat.emissiveIntensity = rearRest;
+  for (const seg of lamps) {
+    if (seg.kind !== 'rear') continue;
+    for (const mesh of meshesUnder(seg.node)) mesh.material = rearMat;
   }
 
   const megalamp = asMesh(named.get('lamp-front-channel'), 'lamp-front-channel');
@@ -193,15 +212,7 @@ export async function loadCybercab() {
   const lampPos = frontBox.getCenter(new THREE.Vector3());
   lampPos.z = frontBox.min.z;
   group.worldToLocal(lampPos);
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff, transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-  });
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(1.2, frontBox.getSize(new THREE.Vector3()).x), 0.04), glowMat);
-  glow.name = 'megalamp-glow';
-  glow.castShadow = false;
-  glow.rotation.y = Math.PI;
-  glow.position.copy(lampPos);
-  group.add(glow);
+  const glowColor = new THREE.Color(0xffffff);
   const lampLight = new THREE.PointLight(0xffffff, 0.08, 3.2, 2);
   lampLight.position.copy(lampPos);
   lampLight.position.z -= 0.35;
@@ -283,6 +294,8 @@ export async function loadCybercab() {
   let prevSpeed = 0;
   let steerAngle = 0;
   let brakeHold = 0;
+  let turnHeld: TurnSignal = 'none';
+  let turnHeldFor = 0;
   let lastSignals: VehicleSignals = { match: false, pickup: false, hazard: false, brake: false, turn: 'none' };
   let lastBlink = false;
   let tealLevel = 0;
@@ -301,20 +314,30 @@ export async function loadCybercab() {
     if (match && !signals.pickup) {
       frontMat.color.setHex(MEGALAMP.color);
       frontMat.emissive.setHex(MEGALAMP.color);
-      frontMat.emissiveIntensity = Math.max(frontEmissive, 22);
+      frontMat.emissiveIntensity = 3.6;
       frontMat.toneMapped = false;
-      glowMat.color.setHex(MEGALAMP.color);
+      glowColor.setHex(MEGALAMP.color);
     } else {
       frontMat.color.setHex(0xffffff);
       frontMat.emissive.setHex(0xffffff);
       frontMat.emissiveIntensity = frontEmissive;
       frontMat.toneMapped = true;
-      glowMat.color.setHex(0xffffff);
+      glowColor.setHex(0xffffff);
     }
-    if (signals.pickup) glowMat.color.copy(tealColor);
-    glowMat.opacity = (signals.pickup ? 0.55 : match ? 0.36 : 0.2) * reveal;
-    lampLight.color.copy(glowMat.color);
-    lampLight.intensity = (signals.pickup ? 0.22 : match ? 0.14 : 0.06) * reveal;
+    if (signals.pickup) glowColor.copy(tealColor);
+    lampLight.color.copy(glowColor);
+    if (brake) {
+      rearMat.color.setRGB(1, 0.015, 0.008);
+      rearMat.emissive.setRGB(1, 0.012, 0.006);
+      rearMat.emissiveIntensity = 9;
+      rearMat.toneMapped = false;
+    } else {
+      rearMat.color.copy(rearColor);
+      rearMat.emissive.copy(rearEmissive);
+      rearMat.emissiveIntensity = rearRest;
+      rearMat.toneMapped = true;
+    }
+    lampLight.intensity = (signals.pickup ? 0.04 : match ? 0.08 : 0.04) * reveal;
     tealLevel = 0;
     brakeLevel = 0;
     turnLevel = 0;
@@ -324,9 +347,10 @@ export async function loadCybercab() {
         case 'front':
         case 'rear': {
           let scale = seg.kind === 'front' && signals.pickup ? LAMP_OFF : runningScale(seg.kind, seg.index);
-          if (flash && seg.index >= 4) scale = LAMP_OFF;
-          else if (flash && seg.index === 3) scale = Math.min(scale, 0.22);
-          seg.node.scale.setScalar(scale);
+          if (flash && seg.kind === 'rear' && seg.index >= 4) scale = Math.min(scale, 0.15);
+          else if (flash && seg.kind === 'rear') scale = Math.min(scale, 0.16);
+          if (seg.kind === 'rear' && brake && !(flash && seg.index >= 4)) seg.node.scale.set(1, 2.2, 1);
+          else seg.node.scale.setScalar(scale);
           break;
         }
         case 'teal': {
@@ -412,7 +436,11 @@ export async function loadCybercab() {
       const yawRate = Math.abs(dyaw) > 0.35 ? 0 : dyaw / Math.max(dt, 1e-3);
       const accel = (speed - prevSpeed) / Math.max(dt, 1e-3);
       prevSpeed = speed;
-      const signals = vehicleSignals({ phase: phaseName, speed, accel, yawRate, curbRate });
+      const raw = vehicleSignals({ phase: phaseName, speed, accel, yawRate, curbRate });
+      const held = holdTurn(raw.turn, turnHeld, turnHeldFor, dt, raw.hazard);
+      turnHeld = held.held;
+      turnHeldFor = held.remaining;
+      const signals = { ...raw, turn: held.turn };
       if (signals.brake) brakeHold = 0.4;
       else brakeHold = Math.max(0, brakeHold - dt);
       const wakeBrake = wakeElapsed >= 1 && wakeElapsed <= 1.35;

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  blinkLit, shouldWake, steerTarget, vehicleSignals, wakeSegmentScale, wheelRoll,
+  blinkLit, holdTurn, shouldWake, steerTarget, vehicleSignals, wakeSegmentScale, wheelRoll,
 } from '../src/logic.ts';
 
 test('wheels roll forward on local X and fronts steer with the yaw', () => {
@@ -41,6 +41,13 @@ test('light policy follows summon, pickup, brake, and turn cues', () => {
   assert.equal(braking.turn, 'none');
   const left = vehicleSignals({ phase: 'ride', speed: 8, accel: 0, yawRate: 0.2, curbRate: 0 });
   assert.equal(left.turn, 'left');
+  const laneChange = vehicleSignals({ phase: 'dispatch', speed: 8, accel: 0, yawRate: 0.2, curbRate: 0.2 });
+  assert.equal(laneChange.turn, 'right');
+  const latched = holdTurn('right', 'none', 0, 0.1, false);
+  assert.equal(latched.turn, 'right');
+  const kept = holdTurn('none', latched.held, latched.remaining, 0.4, false);
+  assert.equal(kept.turn, 'right');
+  assert.equal(holdTurn('none', 'right', 1, 0.2, true).turn, 'none');
   assert.equal(left.brake, false);
   const coast = vehicleSignals({ phase: 'ride', speed: 8, accel: -0.2, yawRate: 0, curbRate: 0 });
   assert.equal(coast.brake, false);

@@ -56,7 +56,13 @@ const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 if (coarsePointer) document.body.dataset.pointer = 'coarse';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: ios ? 'default' : 'high-performance' });
+const renderer = new THREE.WebGLRenderer({
+  canvas,
+  antialias: true,
+  powerPreference: ios ? 'default' : 'high-performance',
+  // The paused harness reads the canvas after a still frame. Live playback leaves the buffer disposable.
+  preserveDrawingBuffer: window.__cybercabPause === true,
+});
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
