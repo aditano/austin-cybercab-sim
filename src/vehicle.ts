@@ -84,8 +84,19 @@ export async function loadCybercab() {
     obj.castShadow = !glass;
     obj.receiveShadow = !glass;
     for (const mat of materialsOf(obj)) {
-      if (mat instanceof THREE.MeshPhysicalMaterial && mat.metalness > 0.4 && mat.transmission === 0) {
-        mat.envMapIntensity = 0.65;
+      if (!(mat instanceof THREE.MeshPhysicalMaterial)) continue;
+      if (glass || mat.transmission > 0) {
+        mat.thickness = 0.045;
+        mat.attenuationDistance = glass && /door-glass|side/i.test(obj.name) ? 0.22 : 0.55;
+        mat.attenuationColor = new THREE.Color('#0c181e');
+        mat.envMapIntensity = 1.05;
+        mat.roughness = Math.min(mat.roughness, 0.06);
+      } else if (mat.metalness > 0.4 && mat.clearcoat > 0.4) {
+        // Clearcoat paint. Performance mode drops scene.environmentIntensity,
+        // so the car's own intensity has to carry the metallic read.
+        mat.envMapIntensity = 2.1;
+        mat.clearcoat = 1;
+        mat.clearcoatRoughness = Math.min(mat.clearcoatRoughness, 0.055);
       }
     }
   });
@@ -95,9 +106,9 @@ export async function loadCybercab() {
   megalamp.material = megalampMat;
 
   const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xf4f7ff, transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    color: 0xffffff, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
   });
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.45, 0.14), glowMat);
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.05, 0.028), glowMat);
   glow.name = 'megalamp-glow';
   glow.castShadow = false;
   glow.rotation.y = Math.PI;
@@ -108,7 +119,7 @@ export async function loadCybercab() {
   glow.position.z -= 0.03;
   group.add(glow);
 
-  const lampLight = new THREE.PointLight(0xf4f7ff, 0.25, 9, 2);
+  const lampLight = new THREE.PointLight(0xffffff, 0.08, 2.4, 2);
   lampLight.position.copy(lampPos);
   lampLight.position.z -= 0.45;
   group.add(lampLight);
@@ -143,6 +154,11 @@ export async function loadCybercab() {
   const screenTex = new THREE.CanvasTexture(screenCanvas);
   screenTex.colorSpace = THREE.SRGBColorSpace;
   const screen = asMesh(named.get('front-screen'), 'front-screen');
+  const uv = screen.geometry.getAttribute('uv');
+  if (uv) {
+    for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
+    uv.needsUpdate = true;
+  }
   screen.material = new THREE.MeshBasicMaterial({ map: screenTex });
   screen.castShadow = false;
 
@@ -213,23 +229,25 @@ export async function loadCybercab() {
     const blink = Math.sin(lampTime * 10) > 0;
     switch (lampMode) {
       case 'idle':
-        megalampMat.emissiveIntensity = 0.45;
-        megalampMat.emissive.setHex(0xf4f7ff);
-        megalampMat.color.setHex(0xf4f7ff);
-        glowMat.color.setHex(0xf4f7ff);
-        glowMat.opacity = 0.18;
+        megalampMat.emissiveIntensity = 3.4;
+        megalampMat.emissive.setHex(0xffffff);
+        megalampMat.color.setHex(0xffffff);
+        glowMat.color.setHex(0xffffff);
+        glowMat.opacity = 0.28;
         red.emissiveIntensity = 0.9;
-        lampLight.intensity = 0.25;
-        lampLight.color.setHex(0xf4f7ff);
+        lampLight.intensity = 0.06;
+        lampLight.distance = 2.2;
+        lampLight.color.setHex(0xffffff);
         break;
       case 'match':
         megalampMat.color.setHex(MEGALAMP.color);
         megalampMat.emissive.setHex(MEGALAMP.color);
-        megalampMat.emissiveIntensity = 2.4 + Math.sin(lampTime * 2.2) * 0.2;
+        megalampMat.emissiveIntensity = 2.6 + Math.sin(lampTime * 2.2) * 0.15;
         glowMat.color.setHex(MEGALAMP.color);
-        glowMat.opacity = 0.55;
+        glowMat.opacity = 0.32;
         red.emissiveIntensity = 1.5;
-        lampLight.intensity = 0.4;
+        lampLight.intensity = 0.1;
+        lampLight.distance = 2.2;
         lampLight.color.setHex(MEGALAMP.color);
         break;
       default: {

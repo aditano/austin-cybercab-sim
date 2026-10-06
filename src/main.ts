@@ -229,8 +229,7 @@ function toast(text: string) {
 
 function lampForPhase() {
   const match = phase === 'dispatch' || phase === 'pickup' || (phase === 'boarded' && !belted);
-  cab.setLamp(match ? 'match' : phase === 'ride' ? 'idle' : 'match');
-  if (phase === 'explore') cab.setLamp('idle');
+  cab.setLamp(match ? 'match' : 'idle');
   cab.setHazards(phase === 'pickup' || phase === 'arrived' || phase === 'exited');
 }
 
@@ -435,7 +434,7 @@ function applyQuality(next: Quality, announce = true) {
   bloomPass.strength = perf ? 0.04 : ultra ? 0.16 : cine ? 0.12 : 0.08;
   bloomPass.radius = ultra ? 0.42 : 0.32;
   smaaPass.enabled = !perf;
-  scene.environmentIntensity = ultra ? 1.15 : perf ? 0.55 : 0.95;
+  scene.environmentIntensity = ultra ? 1.25 : perf ? 0.9 : 1.15;
   const label = ultra ? 'Ultra graphics' : cine ? 'Cinematic graphics' : perf ? 'Performance graphics' : 'Balanced graphics';
   if (announce) toast(label);
 }
@@ -457,11 +456,18 @@ function updateCamera(dt: number) {
   const view = cam;
   switch (view) {
     case 'cabin': {
-      const local = new THREE.Vector3(0.36, 1.14, -0.06);
-      local.applyMatrix4(cab.group.matrixWorld);
-      camera.position.copy(local);
-      camera.rotation.order = 'YXZ';
-      camera.rotation.set(lookPitch, cab.group.rotation.y + (lookYaw - cab.group.rotation.y) * 0.35, 0);
+      // Centered in the seat, ahead of the headrest, aimed through the screen at the road.
+      const eye = new THREE.Vector3(0.0, 0.92, 0.12);
+      const look = new THREE.Vector3(0.0, 0.86, -2.0);
+      eye.applyMatrix4(cab.group.matrixWorld);
+      look.applyMatrix4(cab.group.matrixWorld);
+      camera.position.copy(eye);
+      camera.up.set(0, 1, 0);
+      camera.lookAt(look);
+      const yawOff = (lookYaw - cab.group.rotation.y) * 0.35;
+      const pitchOff = lookPitch - 0.08;
+      camera.rotateY(yawOff);
+      camera.rotateX(pitchOff);
       break;
     }
     case 'chase': {

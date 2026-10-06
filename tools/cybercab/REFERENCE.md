@@ -22,7 +22,7 @@ Length, wheelbase, and track are not in that table.
 
 Length is the Tailosive EV tape figure of about 175 in (4.45 m) against a Model 3, cross-checked on the San Francisco side photo. On that photo the body is roughly 3.1 times as long as it is tall, which at 1,408 mm is about 4.35 m. The model uses a **4.38 m** overall length (nose to the kamm face).
 
-Wheel centers on the same photo sit about 4.4 tire-diameters apart. With a tire outside diameter of 0.66 m (a large aero-covered wheel under a 1.41 m roof), the wheelbase is **2.86 m**. Front overhang to the axle is about 0.72 m; rear overhang about 0.82 m. Track is **1.52 m** so the 0.66 m tires sit just inside the 1.754 m body.
+Wheel centers on the same photo sit about 4.4 tire-diameters apart. With a tire outside diameter of 0.66 m (a large aero-covered wheel under a 1.41 m roof), the wheelbase is **2.86 m**. Front overhang to the axle is about 0.72 m; rear overhang about 0.82 m. Track is **1.60 m** so the 0.66 m tires sit flush in the 1.754 m arches.
 
 | Measure | Model value | Status |
 | --- | --- | --- |
@@ -32,7 +32,7 @@ Wheel centers on the same photo sit about 4.4 tire-diameters apart. With a tire 
 | Ground clearance | 0.15 m | published, rounded |
 | Wheelbase | 2.86 m | estimate |
 | Front axle from nose | 0.72 m | estimate |
-| Track | 1.52 m | estimate |
+| Track | 1.60 m | estimate, flush in the arches |
 | Tire outside diameter | 0.66 m | estimate |
 | Step-in / rocker top | ~0.40 m | near the published 414 mm |
 
@@ -46,11 +46,12 @@ Two-seat closed coupe. The silhouette is a low fastback, not an open roadster an
 - Hood: short and low, flowing into a steep windshield.
 - Roof: body-colored. It peaks just aft of the windshield header (about 42% back from the nose) and falls in one curve to a short tail. No rear window.
 - Greenhouse: dark windshield plus one dark side window per door. The roof panel above the glass is paint, so the cabin reads as a hardtop.
-- Tail: broad kamm face, nearly vertical. Full-width red lamp high on the face, with small lower corner lamps. Black rear bumper and a centered plate.
-- Side: smooth shoulder, black rocker, large circular wheel openings. Butterfly doors are hinged on a straight axis along the roof rail (not the centerline). The shut line starts behind the front arch and ends ahead of the rear arch, from just above the rocker to the roof rail.
-- Wheels: gold aero discs with two circular grooves and a small cap, narrow black tire, brake disc and caliper tucked behind the cover. No side mirrors. Small camera pods on the front fenders and one at the tail.
+- Tail: upright wrapped kamm. The roof holds its height, then the last stretch is pulled into a short vertical face. The red lamp runs the face and turns onto both quarters; a lower red strip does the same. Black rear bumper and a centered plate.
+- Side: smooth shoulder, black rocker, large circular wheel openings, one large raked side window per door. Butterfly doors are hinged on a straight axis along the roof rail (not the centerline).
+- Front: thin white light bar in a dark channel, corners rising into a smile. The black chin’s lower edge rises toward the corners and wraps the fenders.
+- Wheels: champagne outer aero disc, satin dark-grey turbine dish with eight low blades, and a black tire with tread grooves and a visible sidewall. The cover face sits just inside the arch lip. No side mirrors. Small camera pods on the front fenders and one at the tail.
 
-Door swing in the show photos is well past horizontal. The hinge opens 1.95 rad (about 112°) from the closed side panel. The side glass is one large raked opening per door, edged with a black frame. The windshield header is covered by a wider black bezel. The chin and rear bumper are separate smooth black patches so the paint break does not follow the body quads. Seats are sculpted cushions and backs rather than boxes.
+Door swing in the show photos is well past horizontal. The hinge opens 1.95 rad (about 112°) on a bezier arc from the closed side panel. Each door is a 22 mm shell with a dark inner face, a leather card with an armrest swell, and dark tinted glass. The windshield header is covered by a wider black bezel. Seats are bolstered leather buckets; the headrest is part of the back, with stitches following the cushion and the back.
 
 ## Materials
 
@@ -58,15 +59,16 @@ Chosen for glTF PBR (`KHR_materials_clearcoat`, `KHR_materials_transmission`, `K
 
 | Surface | Intent | Principled settings |
 | --- | --- | --- |
-| Champagne paint | Warm satin metallic with a clear layer, close to the show cars’ molded gold | Base `#C9A66B`, metallic 0.72, roughness 0.34, coat weight 1, coat roughness 0.07, coat IOR 1.5 |
-| Windshield | Dark tint, street still readable from the seat | Transmission 0.82, IOR 1.52, roughness 0.04, base `#16303A` |
-| Side glass | Darker than the windshield | Transmission 0.62, IOR 1.52, roughness 0.05, base `#0E1A20` |
-| Rocker, chin, bumper, arch lips | Satin black | Metallic 0.08, roughness 0.46, `#141618` |
-| Aero covers | Same champagne family, slightly flatter | Metallic 0.55, roughness 0.38, coat 0.4 |
-| Tires | Rubber | Roughness 0.92, `#121314` |
-| Front lamp | Emissive white, recolored by the sim for the Megalamp match | Emission strength 14 |
-| Rear lamp | Emissive red | `#FF2A22`, strength 10 |
-| Seats | Dark leather | `#2A2E33`, roughness 0.48, sheen 0.28 |
+| Champagne paint | Warmer metallic than the showroom cream, with a clearcoat. Sunlit door sample on the San Francisco profile is about `#DAB070`; the albedo is `#C4A15C` so reflections, not the diffuse, carry the highlight | Base `#C4A15C`, metallic 0.82, roughness 0.22, coat weight 1, coat roughness 0.055, coat IOR 1.5. The sim sets paint `envMapIntensity` to 2.1 |
+| Windshield | Dark tint, road still readable from the seat | Transmission 0.72, IOR 1.52, roughness 0.03, base `#0E242C`. The loader sets thickness 0.045 and attenuation |
+| Side glass | Much darker than the windshield, with an opaque black shade behind the pane | Transmission 0.12, IOR 1.52, roughness 0.04, base `#05080A`, attenuation distance 0.22 |
+| Rocker, chin, bumper, arch lips, shut reveal | Satin black | Metallic 0.08, roughness 0.46, `#141618` |
+| Aero outer ring | Champagne, satin | `#C6A56A`, metallic 0.62, roughness 0.32, coat 0.55 |
+| Aero turbine | Satin dark grey | `#3A3D42`, metallic 0.55, roughness 0.38 |
+| Tires | Rubber with tread grooves | Roughness 0.86, `#16181A` |
+| Front lamp | Crisp emissive white. The sim tints it violet only while the Megalamp is the match signal | Emission `#FFFFFF`, strength 22 |
+| Rear lamp | Emissive red, wrapped | `#FF2A22`, strength 14 |
+| Seats | Dark leather | `#1C1F24`, roughness 0.38, sheen 0.45, coat 0.18 |
 | Headliner | Light cloth | `#E4E0D6` |
 | Dash | Light, with a thin warm accent | `#D9D4C8`, accent `#8C6844` |
 | Carpet | Black | `#1A1C1E` |
@@ -80,7 +82,7 @@ Two forward-facing seats, no wheel and no pedals. Center console with two cup ho
 ## Rebuild
 
 ```sh
-blender --background --python tools/cybercab/build.py -- --cycles
+blender --background --python tools/cybercab/build.py -- --beauty
 ```
 
-The script writes `public/models/cybercab.glb` and PNG stills under `tools/cybercab/renders/`. `--cycles` is the beauty pass; the default engine is Workbench for shape checks. Draco is not linked in Ubuntu’s Blender 4.0.2 package. When `gltfpack` is on `PATH` the script meshopt-compresses the GLB; otherwise run `npx @gltf-transform/cli meshopt public/models/cybercab.glb public/models/cybercab.glb`. Do not run `gltf-transform optimize` — joining and simplifying collapses the wheel and door nodes.
+The script writes `public/models/cybercab.glb` and PNG stills under `tools/cybercab/renders/`. `--beauty` is the Cycles beauty pass and lights the world with `public/textures/evening_road_01_puresky_1k.hdr` (the same HDRI as the sim), AgX, 64 samples. This Blender build has no OIDN denoiser. The flag is `--beauty` rather than `--cycles` because Blender reserves the `--cycles` prefix for its own device arguments. The default engine is Workbench for shape checks. Draco is not linked in Ubuntu’s Blender 4.0.2 package. When `gltfpack` is on `PATH` the script meshopt-compresses the GLB; otherwise run `npx @gltf-transform/cli meshopt public/models/cybercab.glb public/models/cybercab.glb`. Do not run `gltf-transform optimize` — joining and simplifying collapses the wheel and door nodes.
