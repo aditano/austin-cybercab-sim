@@ -10,7 +10,7 @@ import { createWorld } from './world';
 import { createCybercab } from './vehicle';
 import { createCityLife } from './life';
 import {
-  AUSTIN_ROBOTAXI_GEOFENCE, CONGRESS_ROUTE, DROPOFF, GEOFENCE_NOTE, MEGALAMP,
+  APPROACH_RUNWAY, AUSTIN_ROBOTAXI_GEOFENCE, CAPITOL, CONGRESS_ROUTE, CURB_PULL, DROPOFF, GEOFENCE_NOTE, MEGALAMP,
   PICKUP, ROAD_Y, STOP_INSET, VEHICLE_LABEL, VEHICLE_PLATE, measurePath, pointInRing, project, samplePath,
 } from './geo';
 import './style.css';
@@ -21,8 +21,8 @@ type Cam = 'walk' | 'chase' | 'cabin';
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `<canvas id="scene"></canvas><div class="vignette"></div>
 <header><a class="brand" href="./"><span class="brand-icon">C</span> CYBERCAB <span class="brand-sub">AUSTIN EXPERIENCE</span></a><div class="live"><i></i> AUSTIN, TX <span>SERVICE AREA · ~288 MI²</span></div><button id="settings" class="round" aria-label="Toggle graphics quality">◈</button></header>
-<aside class="chapter"><span class="eyebrow">THE CITY IS YOURS</span><h1>A different<br>way to move.</h1><p>Golden hour. Downtown Austin.<br>Match the Megalamp. Ride autonomously.</p><div class="chapter-line"></div><span class="small-label">01 / REQUEST YOUR RIDE</span></aside>
-<div class="location"><span class="location-dot">⌖</span><div><b id="location-name">Congress Avenue</b><span id="location-detail">DOWNTOWN · INSIDE SERVICE AREA</span></div></div>
+<aside class="chapter"><span class="eyebrow">CONGRESS AVENUE · AUSTIN</span><h1>Golden hour<br>on Congress.</h1><p>The Capitol closes the avenue.<br>Lady Bird Lake is behind you.<br>Match the Megalamp, then ride.</p><div class="chapter-line"></div><span class="small-label">01 / CONFIRM YOUR RIDE</span></aside>
+<div class="location"><span class="location-dot">⌖</span><div><b id="location-name">Congress & 2nd</b><span id="location-detail">DOWNTOWN · CAPITOL NORTH · LAKE SOUTH</span></div></div>
 <div class="hud"><div class="speedo"><b id="speed">00</b><small>MPH</small><span id="gear">P</span></div></div>
 <aside id="phone" class="phone"><div class="phone-top"><b>6:42</b><div class="island"></div><span>▥ ▰</span></div><div class="phone-content"><div class="app-brand">ROBOTAXI <span>✦</span></div><div id="phone-body"></div></div><div class="home-bar"></div></aside>
 <section id="cabin" class="cabin-panel" hidden></section>
@@ -32,43 +32,44 @@ app.innerHTML = `<canvas id="scene"></canvas><div class="vignette"></div>
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.04;
+renderer.toneMappingExposure = 1.08;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.localClippingEnabled = true;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#c5d0d6');
-scene.fog = new THREE.FogExp2('#b9c6cc', 0.00055);
-const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.08, 2500);
+scene.background = new THREE.Color('#e4c3a2');
+scene.fog = new THREE.FogExp2('#e7c8a8', 0.0002);
+const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.15, 3200);
 
 const sky = new Sky();
 sky.scale.setScalar(45000);
 const su = sky.material.uniforms;
-su.turbidity.value = 2.4;
-su.rayleigh.value = 1.05;
-su.mieCoefficient.value = 0.005;
-su.mieDirectionalG.value = 0.82;
-const sunPosition = new THREE.Vector3(-0.72, 0.38, 0.28);
+su.turbidity.value = 8.2;
+su.rayleigh.value = 1.25;
+su.mieCoefficient.value = 0.013;
+su.mieDirectionalG.value = 0.87;
+const sunPosition = new THREE.Vector3(-0.95, 0.155, 0.42);
 su.sunPosition.value.copy(sunPosition);
 scene.add(sky);
 const pmrem = new THREE.PMREMGenerator(renderer);
 scene.environment = pmrem.fromScene(sky as unknown as THREE.Scene, 0.03).texture;
-scene.environmentIntensity = 0.72;
+scene.environmentIntensity = 0.58;
 
-scene.add(new THREE.HemisphereLight('#dce9f5', '#8d7a64', 0.32));
-const sun = new THREE.DirectionalLight('#ffe6c4', 3.6);
+scene.add(new THREE.HemisphereLight('#ffd2a8', '#6d5342', 0.46));
+const sun = new THREE.DirectionalLight('#ffb87a', 3.55);
 sun.position.copy(sunPosition).normalize().multiplyScalar(280);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-sun.shadow.camera.left = -140;
-sun.shadow.camera.right = 140;
-sun.shadow.camera.top = 140;
-sun.shadow.camera.bottom = -140;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.left = -46;
+sun.shadow.camera.right = 46;
+sun.shadow.camera.top = 46;
+sun.shadow.camera.bottom = -46;
 sun.shadow.camera.far = 700;
 sun.shadow.bias = -0.00025;
 sun.shadow.normalBias = 0.04;
@@ -79,24 +80,27 @@ const world = createWorld(scene);
 const cab = createCybercab();
 scene.add(cab.group);
 
-const laneOffset = new THREE.Vector3(4.7, ROAD_Y, 1.5);
-let route = CONGRESS_ROUTE.map(([lon, lat]) => project(lon, lat).add(laneOffset));
+const laneOffset = new THREE.Vector3(4.7, 0, 1.5);
+const centerline = CONGRESS_ROUTE.map(([lon, lat]) => project(lon, lat).add(laneOffset));
+const backDir = centerline[0].clone().sub(centerline[1]).normalize();
+centerline.unshift(centerline[0].clone().addScaledVector(backDir, APPROACH_RUNWAY));
+let route = centerline.map((p) => p.clone().setY(ROAD_Y));
 let { cumulative, length: routeLength } = measurePath(route);
 const sample = (d: number) => samplePath(route, cumulative, d);
-function curbShift(d: number, meters = 2.05) {
+function curbShift(d: number, meters = CURB_PULL) {
   const p = sample(d);
-  const across = new THREE.Vector3(Math.cos(p.heading), 0, -Math.sin(p.heading));
-  return across.multiplyScalar(meters);
+  return new THREE.Vector3(Math.cos(p.heading), 0, -Math.sin(p.heading)).multiplyScalar(meters);
 }
-const pickupDist = STOP_INSET;
+const pickupDist = APPROACH_RUNWAY + STOP_INSET;
 const dropoffDist = Math.max(pickupDist + 40, routeLength - STOP_INSET);
+const stageDist = Math.max(8, pickupDist - 86);
 
 const pickupPad = new THREE.Mesh(
   new THREE.RingGeometry(2.4, 3.3, 48),
   new THREE.MeshStandardMaterial({ color: 0xe6c25a, emissive: 0xc9a24a, emissiveIntensity: 0.35, roughness: 0.55, side: THREE.DoubleSide }),
 );
 pickupPad.rotation.x = -Math.PI / 2;
-pickupPad.position.copy(sample(pickupDist).position).add(curbShift(pickupDist, 2.1)).setY(ROAD_Y + 0.02);
+pickupPad.position.copy(sample(pickupDist).position).add(curbShift(pickupDist, CURB_PULL)).setY(ROAD_Y + 0.025);
 scene.add(pickupPad);
 const padGlow = new THREE.Mesh(
   new THREE.CircleGeometry(2.3, 32),
@@ -126,7 +130,8 @@ if (ssaoPass) {
   ssaoPass.maxDistance = 0.0005;
   composer.addPass(ssaoPass);
 }
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), softwareGl ? 0.08 : 0.16, 0.4, 0.9);
+if (ssaoPass) ssaoPass.enabled = false;
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), softwareGl ? 0.05 : 0.12, 0.42, 0.88);
 composer.addPass(bloomPass);
 const smaaPass = new SMAAPass();
 smaaPass.enabled = !softwareGl;
@@ -136,24 +141,33 @@ composer.addPass(new OutputPass());
 let phase: Phase = 'explore';
 let belted = false;
 let elapsed = 0;
-let distance = 22;
+let distance = stageDist;
 let door = 0;
 let temperature = 21;
 let muted = false;
 let phoneVisible = true;
 let paused = false;
-let lowQuality = false;
 let speedMps = 0;
 let cam: Cam = 'walk';
 let mapOverview = true;
 let doorRequested = false;
+let hold = 0;
+let blockedFor = 0;
+let curbState = 0;
+type Quality = 'balanced' | 'cinematic' | 'performance';
+let quality: Quality = softwareGl ? 'performance' : 'balanced';
 const pickup = sample(pickupDist);
-cab.group.position.copy(pickup.position).add(curbShift(pickupDist));
-cab.group.rotation.y = pickup.heading;
+cab.group.position.copy(sample(stageDist).position);
+cab.group.position.y = ROAD_Y;
+cab.group.rotation.y = sample(stageDist).heading;
 
-let walk = pickup.position.clone().add(curbShift(pickupDist, 6.5)).add(new THREE.Vector3(0, 1.54, 0));
-let yaw = 0.65;
-let pitch = -0.04;
+let walk = pickup.position.clone().add(curbShift(pickupDist, 1.8));
+walk.y = ROAD_Y + 1.62;
+const capitolAim = project(CAPITOL.lon, CAPITOL.lat).sub(walk);
+let lookYaw = Math.atan2(-capitolAim.x, -capitolAim.z);
+let lookPitch = -0.04;
+let orbitYaw = 0.58;
+let orbitPitch = 0.12;
 let last = performance.now();
 const keys = new Set<string>();
 const phone = document.querySelector<HTMLElement>('#phone')!;
@@ -220,94 +234,130 @@ function lampForPhase() {
   cab.setHazards(phase === 'pickup' || phase === 'arrived' || phase === 'exited');
 }
 
+function matchCard() {
+  return `<div class="id-row"><div class="plate-badge"><span>TEXAS</span><b>${VEHICLE_PLATE}</b></div>
+    <div class="mega-card"><i style="background:${MEGALAMP.hex}"></i><div><small>MEGALAMP</small><b>Look for ${MEGALAMP.name}</b></div></div></div>`;
+}
 function renderUI() {
   lampForPhase();
   document.querySelector('#location-name')!.textContent = phase === 'complete' || phase === 'arrived' || phase === 'exited' ? DROPOFF.name : PICKUP.name;
+  document.querySelector('#location-detail')!.textContent = phase === 'explore'
+    ? 'DOWNTOWN · CAPITOL NORTH · LAKE SOUTH'
+    : phase === 'dispatch' || phase === 'pickup' ? 'MATCH MEGALAMP AND PLATE'
+    : 'CONGRESS AVENUE · SIMULATED RIDE';
   const chapter = document.querySelector<HTMLElement>('.chapter')!;
   chapter.style.display = phase === 'explore' ? 'block' : 'none';
   phone.hidden = !phoneVisible || phase === 'ride';
   cabin.hidden = phase !== 'ride' && phase !== 'boarded' && phase !== 'arrived';
   const map = mapMarkup((distance - pickupDist) / Math.max(1, dropoffDist - pickupDist));
   const inside = pointInRing(PICKUP.lon, PICKUP.lat, AUSTIN_ROBOTAXI_GEOFENCE) && pointInRing(DROPOFF.lon, DROPOFF.lat, AUSTIN_ROBOTAXI_GEOFENCE);
-  if (phase === 'explore') body.innerHTML = `<h2>Where to?</h2><p class="phone-sub">Choose a destination within the Austin service area.</p>${map}
+  const canStart = belted && door < 0.08;
+  if (phase === 'explore') body.innerHTML = `<h2>Where to?</h2><p class="phone-sub">Pick a stop inside the Austin service area. This trip stays on Congress.</p>${map}
     <div class="route-card"><div class="route-row"><i class="dot"></i><div><small>PICKUP</small><b>${PICKUP.name}</b></div><span class="chip in">In area</span></div>
     <div class="route-row"><i class="square"></i><div><small>DESTINATION</small><b>${DROPOFF.name}</b></div><span class="chip ${inside ? 'in' : 'out'}">${inside ? 'In area' : 'Outside'}</span></div></div>
-    <div class="fare"><span>Cybercab <small>2 seats · Simulated fare</small></span><b>~3 min<small>Est. wait 2 min</small></b></div>
+    <div class="fare"><span>Cybercab <small>2 seats · No wheel · Simulated fare</small></span><b>~3 min<small>Est. wait under 1 min</small></b></div>
     <p class="geo-note">${GEOFENCE_NOTE}</p>
-    <button class="primary" id="request" ${inside ? '' : 'disabled'}>Confirm ride <span>↗</span></button>
-    <p class="micro">Independent recreation. No real booking, fare, or Tesla connection. Hours simulated 6:00–23:00.</p>`;
-  if (phase === 'dispatch') body.innerHTML = `<h2>Your Cybercab is on the way.</h2><p class="phone-sub">Match both the Megalamp color and the plate before boarding.</p>${map}
-    <div class="vehicle-card"><span class="car-line megalamp-swatch" style="color:${MEGALAMP.hex}">▰</span><b>${VEHICLE_LABEL}</b><small>MEGALAMP · ${MEGALAMP.name.toUpperCase()} · PLATE ${VEHICLE_PLATE}</small></div>
-    <div class="pickup-info"><span class="lamp-chip" style="background:${MEGALAMP.hex}"></span><div><b>Look for ${MEGALAMP.name}</b><small>Front Megalamp matches this color · TX ${VEHICLE_PLATE}</small></div></div>
+    <button class="primary" id="request" ${inside ? '' : 'disabled'}>Confirm <span>↗</span></button>
+    <p class="micro">Independent concept. No real booking, fare, or Tesla connection. Hours simulated 6:00–23:00.</p>`;
+  if (phase === 'dispatch') body.innerHTML = `<h2>Your Cybercab is on the way.</h2><p class="phone-sub">Match the Megalamp color and the license plate before you get in.</p>${map}
+    <p class="vehicle-kicker">${VEHICLE_LABEL}</p>${matchCard()}
     <button class="secondary" id="cancel">Cancel request</button>`;
-  if (phase === 'pickup') body.innerHTML = `<h2>Your Cybercab has arrived.</h2><p class="phone-sub">Hazards flash while parked. Confirm the ${MEGALAMP.name} Megalamp and plate ${VEHICLE_PLATE}. Your door opens when your phone is detected.</p>${map}
-    <div class="vehicle-card"><span class="car-line megalamp-swatch" style="color:${MEGALAMP.hex}">▰</span><b>Welcome aboard.</b><small>${VEHICLE_LABEL}</small></div>
-    <button class="primary" id="enter">Enter Cybercab <span>→</span></button>`;
-  if (phase === 'boarded') body.innerHTML = `<h2>Buckle up to continue.</h2><p class="phone-sub">Your door closes automatically when everyone is buckled. Then tap Start Ride here or on the cabin screen.</p>
-    <button class="secondary" id="buckle-phone">${belted ? '✓ Seatbelt fastened' : 'Fasten seatbelt'}</button>
-    <button class="primary" id="start-phone" ${belted && door < 0.08 ? '' : 'disabled'}>${belted && door >= 0.08 ? 'Closing door…' : 'Start Ride'}</button>`;
-  if (phase === 'arrived') body.innerHTML = `<h2>You’ve arrived.</h2><p class="phone-sub">${DROPOFF.name}. Your Cybercab is in Park with hazard lights on.</p>${map}
+  if (phase === 'pickup') body.innerHTML = `<h2>Your Cybercab has arrived.</h2><p class="phone-sub">Hazards are on. Front light bar is ${MEGALAMP.name}. Plate TX ${VEHICLE_PLATE}. A door opens when your phone is detected.</p>${map}
+    ${matchCard()}
+    <button class="primary" id="enter">Enter <span>→</span></button>`;
+  if (phase === 'boarded') body.innerHTML = `<h2>Buckle up.</h2><p class="phone-sub">The door closes once everyone is buckled. Then tap Start Ride here or on the cabin screen.</p>
+    <button class="secondary" id="buckle-phone">${belted ? 'Seatbelt fastened' : 'Fasten seatbelt'}</button>
+    <button class="primary" id="start-phone" ${canStart ? '' : 'disabled'}>${belted && !canStart ? 'Closing door…' : 'Start Ride'}</button>`;
+  if (phase === 'arrived') body.innerHTML = `<h2>You have arrived.</h2><p class="phone-sub">${DROPOFF.name}. Parked with hazards on. Open a door when you are ready to step out.</p>${map}
     <button class="primary" id="exit-phone">Open door</button>`;
-  if (phase === 'exited') body.innerHTML = `<h2>Ready to finish?</h2><p class="phone-sub">Once you’re safely out, complete the trip in the app. The doors close after that.</p>${map}
+  if (phase === 'exited') body.innerHTML = `<h2>Complete your trip.</h2><p class="phone-sub">Once you are clear of the vehicle, finish in the app. Check for belongings. The doors close after that.</p>${map}
     <button class="primary" id="finish">Complete trip</button>`;
-  if (phase === 'complete') body.innerHTML = `<div class="complete-icon">✓</div><h2>Trip complete.</h2><p class="phone-sub">Thanks for riding. Check that you have all your belongings.</p>${map}
+  if (phase === 'complete') body.innerHTML = `<div class="complete-icon">✓</div><h2>Trip complete.</h2><p class="phone-sub">Thanks for riding. This was a local simulation, not a Tesla trip.</p>${map}
     <div class="trip-summary"><span>Distance<b>${((dropoffDist - pickupDist) / 1000).toFixed(2)} km</b></span><span>Megalamp<b>${MEGALAMP.name}</b></span></div>
     <button class="primary" id="restart">Take another ride <span>↗</span></button>`;
   if (phase === 'boarded' || phase === 'ride' || phase === 'arrived') {
-    const eta = Math.max(1, Math.ceil((routeLength - distance) / 11));
-    cabin.innerHTML = `<div class="cabin-header"><span>CYBERCAB</span><span>6:42 PM <i>☀</i> 28° · 🔒 · CAM</span></div>
+    const remainingM = Math.max(0, dropoffDist - distance);
+    const eta = Math.max(1, Math.ceil(remainingM / 12));
+    const boardedCopy = belted && !canStart
+      ? 'Closing the door. Start Ride unlocks when it is shut.'
+      : 'Buckle up. The door closes when everyone is buckled. Then Start Ride.';
+    cabin.innerHTML = `<div class="cabin-header"><span>CYBERCAB</span><span>6:42 PM · ${temperature}° · ${belted ? 'BELT' : 'UNBUCKLED'} · CAM</span></div>
       <div class="cabin-grid"><div class="cabin-map">${map}</div>
-      <div class="cabin-copy"><small>${phase === 'arrived' ? 'YOU HAVE ARRIVED' : 'YOUR DESTINATION'}</small>
+      <div class="cabin-copy"><small>${phase === 'arrived' ? 'YOU HAVE ARRIVED' : phase === 'boarded' ? 'READY TO START' : 'YOUR DESTINATION'}</small>
       <h2>${DROPOFF.name}</h2>
-      <p>${phase === 'boarded' ? (belted && door >= 0.08 ? 'Closing door…' : 'Buckle up. Your door closes when everyone is buckled. Then Start Ride.') : phase === 'arrived' ? 'Vehicle is in Park. Touch Open, then complete the trip in the Robotaxi app.' : `${eta} min · ${Math.max(0, (dropoffDist - distance) / 1000).toFixed(2)} km remaining`}</p>
-      ${phase === 'boarded' ? `<button class="secondary" id="buckle">${belted ? '✓ Seatbelt fastened' : 'Fasten seatbelt'}</button><button class="primary" id="start-ride" ${belted && door < 0.08 ? '' : 'disabled'}>Start Ride →</button>` : phase === 'arrived' ? '<button class="primary" id="exit-cabin">Open door & exit →</button>' : `<button class="secondary" id="pause">${paused ? 'Resume ride' : 'Pull over / pause'}</button>`}
+      <p>${phase === 'boarded' ? boardedCopy : phase === 'arrived' ? 'In Park. Hazards on. Open the door, step out, then complete the trip in the app.' : `${eta} min · ${remainingM / 1000 > 0 ? (remainingM / 1000).toFixed(2) : '0.00'} km remaining`}</p>
+      ${phase === 'boarded' ? `<button class="secondary" id="buckle">${belted ? 'Seatbelt fastened' : 'Fasten seatbelt'}</button><button class="primary" id="start-ride" ${canStart ? '' : 'disabled'}>Start Ride</button>` : phase === 'arrived' ? '<button class="primary" id="exit-cabin">Open door</button>' : `<button class="secondary" id="pause">${paused ? 'Resume ride' : 'Pull over'}</button>`}
       </div></div>
       <div class="cabin-bottom">
         <button id="temp-down" aria-label="Lower cabin temperature">−</button><b>${temperature}°</b><button id="temp-up" aria-label="Raise cabin temperature">+</button>
         <span>AUTO</span>
-        <button id="music">${muted ? '♫ Sound off' : '♫ Media'}</button>
+        <button id="music">${muted ? 'Sound off' : 'Media'}</button>
         <button id="support" class="ghost">Support</button>
-        <span class="cabin-status">${phase === 'ride' ? '● AUTONOMOUS' : '● PARK'}</span>
+        <span class="cabin-status">${phase === 'ride' && !paused ? 'AUTONOMOUS' : 'PARK'}</span>
       </div>`;
   }
-  bind('request', () => {
-    const behind = sample(Math.max(2, pickupDist - 48)).position;
-    cab.group.position.copy(behind);
-    distance = Math.max(2, pickupDist - 48);
-    setPhase('dispatch');
-    cam = 'chase';
-  });
-  bind('cancel', () => { cam = 'walk'; setPhase('explore'); });
-  bind('enter', () => { yaw = 0.65; pitch = 0; cam = 'cabin'; doorRequested = true; setPhase('boarded'); });
-  bind('buckle', () => { belted = !belted; renderUI(); });
-  bind('buckle-phone', () => { belted = !belted; renderUI(); });
-  bind('start-ride', () => {
-    if (!belted || door > 0.08) return;
+  const fasten = () => { if (!belted) { belted = true; renderUI(); } };
+  const tryStart = () => {
+    if (phase !== 'boarded' || !belted || door > 0.08) return;
     startAudio();
     cam = 'chase';
     mapOverview = false;
+    paused = false;
+    blockedFor = 0;
     setPhase('ride');
+  };
+  bind('request', () => {
+    distance = stageDist;
+    speedMps = 0;
+    hold = 0;
+    placeCab(stageDist, 0);
+    cam = 'chase';
+    orbitYaw = 0.58;
+    orbitPitch = 0.12;
+    setPhase('dispatch');
+    toast('On the way. Match Violet and plate ' + VEHICLE_PLATE + '. WASD walks.');
   });
-  bind('start-phone', () => document.getElementById('start-ride')?.click());
+  bind('cancel', () => { cam = 'walk'; distance = stageDist; setPhase('explore'); });
+  bind('enter', () => {
+    lookYaw = cab.group.rotation.y;
+    lookPitch = 0.16;
+    cam = 'cabin';
+    doorRequested = true;
+    setPhase('boarded');
+  });
+  bind('buckle', fasten);
+  bind('buckle-phone', fasten);
+  bind('start-ride', tryStart);
+  bind('start-phone', tryStart);
   const leaveCabin = () => {
     doorRequested = true;
-    walk = cab.group.position.clone().add(curbShift(distance || dropoffDist, 6.4)).setY(ROAD_Y + 1.54);
-    yaw = 0.7; pitch = -0.04; phoneVisible = true; cam = 'walk'; setPhase('exited');
+    walk = cab.group.position.clone().add(curbShift(dropoffDist, CURB_PULL + 2.4));
+    walk.y = ROAD_Y + 1.62;
+    lookYaw = cab.group.rotation.y + 0.9;
+    lookPitch = -0.06;
+    phoneVisible = true;
+    cam = 'walk';
+    setPhase('exited');
   };
   bind('exit-phone', leaveCabin);
   bind('exit-cabin', leaveCabin);
   bind('finish', () => { doorRequested = false; setPhase('complete'); });
   bind('restart', () => {
-    distance = pickupDist; speedMps = 0; paused = false; belted = false; cam = 'walk'; doorRequested = false; mapOverview = true;
-    walk = pickup.position.clone().add(curbShift(pickupDist, 6.5)).setY(ROAD_Y + 1.54);
-    yaw = 0.65; pitch = -0.04; setPhase('explore');
+    distance = stageDist; speedMps = 0; paused = false; belted = false; cam = 'walk'; doorRequested = false; mapOverview = true;
+    hold = 0; blockedFor = 0; curbState = 0;
+    walk = pickup.position.clone().add(curbShift(pickupDist, 1.8));
+    walk.y = ROAD_Y + 1.62;
+    const again = project(CAPITOL.lon, CAPITOL.lat).sub(walk);
+    lookYaw = Math.atan2(-again.x, -again.z);
+    lookPitch = -0.04;
+    setPhase('explore');
   });
   bind('pause', () => { paused = !paused; renderUI(); });
   bind('temp-down', () => { temperature = Math.max(16, temperature - 1); renderUI(); });
   bind('temp-up', () => { temperature = Math.min(28, temperature + 1); renderUI(); });
   bind('music', () => { muted = !muted; if (gain) gain.gain.value = muted ? 0 : 0.018; renderUI(); });
   bind('center-map', () => { mapOverview = !mapOverview; renderUI(); });
-  bind('support', () => toast('Simulated support only — this does not contact Tesla or emergency services.'));
+  bind('support', () => toast('Simulated support only. This does not contact Tesla or emergency services.'));
 }
 
 function bind(id: string, fn: () => void) {
@@ -335,8 +385,15 @@ canvas.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; l
 canvas.addEventListener('pointerup', () => { dragging = false; });
 canvas.addEventListener('pointermove', e => {
   if (!dragging) return;
-  yaw -= (e.clientX - lx) * 0.003;
-  pitch = THREE.MathUtils.clamp(pitch - (e.clientY - ly) * 0.003, -1, 1);
+  const dx = (e.clientX - lx) * 0.0035;
+  const dy = (e.clientY - ly) * 0.003;
+  if (cam === 'chase') {
+    orbitYaw = THREE.MathUtils.clamp(orbitYaw - dx, -0.1, 0.72);
+    orbitPitch = THREE.MathUtils.clamp(orbitPitch - dy, -0.02, 0.42);
+  } else {
+    lookYaw -= dx;
+    lookPitch = THREE.MathUtils.clamp(lookPitch - dy, -0.65, 0.5);
+  }
   lx = e.clientX; ly = e.clientY;
 });
 window.addEventListener('keydown', e => {
@@ -354,50 +411,74 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
 window.addEventListener('blur', () => keys.clear());
-bind('settings', () => {
-  lowQuality = !lowQuality;
-  const ratio = lowQuality || softwareGl ? 1 : Math.min(devicePixelRatio, 1.75);
+function applyQuality(next: Quality, announce = true) {
+  quality = softwareGl && next === 'cinematic' ? 'performance' : next;
+  const perf = quality === 'performance';
+  const cine = quality === 'cinematic';
+  const ratio = perf ? 1 : Math.min(devicePixelRatio, cine ? 1.5 : 1.25);
   renderer.setPixelRatio(ratio);
   renderer.setSize(innerWidth, innerHeight);
   composer.setPixelRatio(ratio);
   composer.setSize(innerWidth, innerHeight);
-  sun.castShadow = !(lowQuality || softwareGl);
+  sun.castShadow = !perf;
+  sun.shadow.mapSize.set(cine ? 2048 : 1024, cine ? 2048 : 1024);
   if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
-  if (ssaoPass) ssaoPass.enabled = !lowQuality && !softwareGl;
-  bloomPass.strength = lowQuality || softwareGl ? 0.06 : 0.16;
-  smaaPass.enabled = !(lowQuality || softwareGl);
-  toast(lowQuality ? 'Performance graphics enabled' : 'Cinematic graphics enabled');
+  if (ssaoPass) ssaoPass.enabled = cine;
+  bloomPass.strength = perf ? 0.04 : cine ? 0.2 : 0.12;
+  smaaPass.enabled = !perf;
+  if (announce) toast(cine ? 'Cinematic graphics' : perf ? 'Performance graphics' : 'Balanced graphics');
+}
+bind('settings', () => {
+  const order: Quality[] = ['balanced', 'cinematic', 'performance'];
+  applyQuality(order[(order.indexOf(quality) + 1) % order.length]);
 });
 
 const chaseOffset = new THREE.Vector3();
 const lookTarget = new THREE.Vector3();
+const desiredCam = new THREE.Vector3();
+const localCam = new THREE.Vector3();
+const invQuat = new THREE.Quaternion();
 
 function updateCamera(dt: number) {
   const view = cam;
   switch (view) {
     case 'cabin': {
-      const local = new THREE.Vector3(0.32, 1.18, 0.38);
+      const local = new THREE.Vector3(0.12, 0.96, 0.35);
       local.applyMatrix4(cab.group.matrixWorld);
       camera.position.copy(local);
       camera.rotation.order = 'YXZ';
-      camera.rotation.set(pitch, cab.group.rotation.y + (yaw - 0.65) * 0.5, 0);
+      camera.rotation.set(lookPitch, cab.group.rotation.y + (lookYaw - cab.group.rotation.y) * 0.35, 0);
       break;
     }
     case 'chase': {
-      chaseOffset.set(Math.sin(yaw - 0.65) * 1.4, 2.15 + pitch * -0.8, 7.4);
-      chaseOffset.applyQuaternion(cab.group.quaternion);
-      camera.position.lerp(cab.group.position.clone().add(chaseOffset), 1 - Math.exp(-dt * 4));
-      lookTarget.copy(cab.group.position).add(new THREE.Vector3(0, 1.05, 0));
+      const face = phase === 'dispatch' || phase === 'pickup';
+      if (face) chaseOffset.set(5.6, 2.7, -5.2);
+      else chaseOffset.set(Math.sin(orbitYaw) * 3.1 + 2.4, 2.7 + orbitPitch * 1.2, 7.5);
+      chaseOffset.y = Math.max(1.7, chaseOffset.y);
+      desiredCam.copy(chaseOffset).applyQuaternion(cab.group.quaternion).add(cab.group.position);
+      const snap = camera.position.distanceTo(desiredCam) > 3.2 || camera.position.distanceTo(cab.group.position) < cab.cameraClearance;
+      camera.position.lerp(desiredCam, snap ? 1 : 1 - Math.exp(-dt * 3.4));
+      invQuat.copy(cab.group.quaternion).invert();
+      localCam.copy(camera.position).sub(cab.group.position).applyQuaternion(invQuat);
+      if (localCam.length() < cab.cameraClearance) {
+        localCam.setLength(cab.cameraClearance);
+        localCam.applyQuaternion(cab.group.quaternion);
+        camera.position.copy(cab.group.position).add(localCam);
+      }
+      lookTarget.set(0, 0.95, face ? -0.35 : -7.2).applyQuaternion(cab.group.quaternion).add(cab.group.position);
       camera.lookAt(lookTarget);
       break;
     }
     case 'walk': {
       const movement = new THREE.Vector3(Number(keys.has('d')) - Number(keys.has('a')), 0, Number(keys.has('s')) - Number(keys.has('w')));
-      movement.applyAxisAngle(new THREE.Vector3(0, 1, 0), yaw).multiplyScalar(dt * 5);
-      walk.add(movement);
-      camera.position.lerp(walk, 1 - Math.exp(-dt * 5));
+      if (movement.lengthSq() > 0) {
+        movement.applyAxisAngle(new THREE.Vector3(0, 1, 0), lookYaw).multiplyScalar(dt * 4.4);
+        walk.add(movement);
+        walk.y = ROAD_Y + 1.62;
+      }
+      camera.position.lerp(walk, 1 - Math.exp(-dt * 6));
       camera.rotation.order = 'YXZ';
-      camera.rotation.set(pitch, yaw, 0);
+      camera.rotation.set(lookPitch, lookYaw, 0);
       break;
     }
     default: {
@@ -407,54 +488,78 @@ function updateCamera(dt: number) {
   }
 }
 
-let cruise = 0;
 function placeCab(d: number, curb = 0) {
-  const p = sample(d);
+  const p = sample(THREE.MathUtils.clamp(d, 0.4, routeLength - 0.4));
   cab.group.position.copy(p.position);
   if (curb) cab.group.position.add(curbShift(d, curb));
+  cab.group.position.y = ROAD_Y;
   cab.group.rotation.y = p.heading;
 }
 function update(dt: number) {
   elapsed += dt;
   world.update(dt);
-  const traffic = life.update(dt, distance, cruise);
-  if (phase === 'dispatch') {
-    const target = sample(pickupDist).position.clone().add(curbShift(pickupDist));
-    const to = target.clone().sub(cab.group.position);
-    const dist = to.length();
-    if (dist > 0.45) {
-      to.normalize();
-      speedMps = Math.min(10, dist * 0.4);
-      cab.group.position.addScaledVector(to, speedMps * dt);
-      cab.group.rotation.y = Math.atan2(-to.x, -to.z);
-      distance = pickupDist - dist;
-    } else {
-      placeCab(pickupDist, 2.05);
-      speedMps = 0;
+  const walking = keys.has('w') || keys.has('a') || keys.has('s') || keys.has('d');
+  if (walking && cam === 'chase' && phase !== 'ride' && phase !== 'boarded' && phase !== 'arrived') {
+    walk.copy(camera.position);
+    walk.y = ROAD_Y + 1.62;
+    cam = 'walk';
+  }
+  const traffic = life.update(dt, distance, speedMps);
+  if (phase === 'explore') {
+    placeCab(stageDist, 0);
+    speedMps = 0;
+    hold = 0;
+  } else if (phase === 'dispatch') {
+    const remaining = pickupDist - distance;
+    const want = remaining > 18 ? 12.6 : Math.max(0, (remaining / 18) * 12.6);
+    const rate = want + 0.2 >= speedMps ? 4.5 : 8;
+    speedMps += THREE.MathUtils.clamp(want - speedMps, -rate * dt, rate * dt);
+    if (want < 0.08 && speedMps < 0.2) speedMps = 0;
+    distance = Math.min(pickupDist, distance + speedMps * dt);
+    const pull = THREE.MathUtils.smoothstep(pickupDist - 22, pickupDist - 1.4, distance) * CURB_PULL;
+    placeCab(distance, pull);
+    if (distance >= pickupDist - 0.25 && speedMps < 0.35) {
       distance = pickupDist;
-      if (elapsed > 1.8) setPhase('pickup');
-    }
-  }
-  if (phase === 'explore') placeCab(pickupDist, 2.05);
-  if (phase !== 'ride' && phase !== 'dispatch') { speedMps = 0; }
-  if (phase === 'ride') {
+      speedMps = 0;
+      placeCab(pickupDist, CURB_PULL);
+      hold += dt;
+      if (hold > 0.4) setPhase('pickup');
+    } else hold = 0;
+  } else if (phase === 'pickup' || phase === 'boarded') {
+    placeCab(pickupDist, CURB_PULL);
+    speedMps = 0;
+  } else if (phase === 'ride') {
     const remaining = dropoffDist - distance;
-    let want = paused ? 0 : Math.min(11.5, elapsed * 1.8, remaining * 0.5 + 1.1);
-    if (!paused && traffic.stop) {
-      const vStop = Math.sqrt(Math.max(0, 2 * 2.5 * Math.max(0, traffic.stopDist - 2)));
+    const cruise = Math.min(13.4, 5 + elapsed * 2.6);
+    let want = paused ? 0 : remaining > 20 ? cruise : Math.max(0, (remaining / 20) * cruise);
+    if (!paused && remaining > 18 && traffic.stop && blockedFor < 5) {
+      const vStop = Math.sqrt(Math.max(0, 2 * 3.4 * Math.max(0, traffic.stopDist - 3.5)));
       want = Math.min(want, vStop);
+      if (want < 0.45) blockedFor += dt;
+    } else if (!traffic.stop) blockedFor = Math.max(0, blockedFor - dt);
+    if (!paused && blockedFor >= 5 && remaining > 18) want = Math.max(want, 3.4);
+    const rate = want + 0.15 >= speedMps ? 2.6 : 7;
+    speedMps += THREE.MathUtils.clamp(want - speedMps, -rate * dt, rate * dt);
+    if (want < 0.08 && speedMps < 0.16) speedMps = 0;
+    const curbTarget = paused
+      ? CURB_PULL
+      : THREE.MathUtils.smoothstep(dropoffDist - 18, dropoffDist - 1.6, distance) * CURB_PULL;
+    curbState = THREE.MathUtils.damp(curbState, curbTarget, 2.4, dt);
+    if (door < 0.04) distance = Math.min(dropoffDist, distance + speedMps * dt);
+    placeCab(distance, curbState);
+    if (distance >= dropoffDist - 0.2 && speedMps < 0.55) {
+      distance = dropoffDist;
+      speedMps = 0;
+      placeCab(dropoffDist, CURB_PULL);
+      phoneVisible = true;
+      cam = 'chase';
+      setPhase('arrived');
     }
-    const accel = paused || want < cruise ? 6 : 2.0;
-    cruise += THREE.MathUtils.clamp(want - cruise, -accel * dt, accel * dt);
-    if (want < 0.05 && cruise < 0.12) cruise = 0;
-    speedMps = cruise;
-    if (door < 0.02) distance = Math.min(dropoffDist, distance + speedMps * dt);
-    const curb = THREE.MathUtils.smoothstep(distance, dropoffDist - 16, dropoffDist - 2) * 2.05;
-    placeCab(distance, curb);
-    if (distance >= dropoffDist - 0.08) { phoneVisible = true; cam = 'chase'; cruise = 0; speedMps = 0; setPhase('arrived'); }
+  } else {
+    placeCab(dropoffDist, CURB_PULL);
+    speedMps = 0;
   }
-  const nearCab = camera.position.distanceTo(cab.group.position) < 5.2;
-  const wantDoor = (phase === 'pickup' && (elapsed > 1.1 || nearCab)) || (phase === 'boarded' && !belted) || ((phase === 'arrived' || phase === 'exited') && doorRequested) ? 1 : 0;
+  const wantDoor = (phase === 'pickup' && elapsed > 0.35) || (phase === 'boarded' && !belted) || ((phase === 'arrived' || phase === 'exited') && doorRequested) ? 1 : 0;
   door = THREE.MathUtils.damp(door, wantDoor, 3.2, dt);
   cab.setDoor(door, 1);
   cab.update(dt, speedMps);
@@ -462,7 +567,6 @@ function update(dt: number) {
   updateCamera(dt);
   sun.position.copy(cab.group.position).add(sunPosition.clone().normalize().multiplyScalar(280));
   sun.target.position.copy(cab.group.position);
-  renderer.shadowMap.needsUpdate = true;
   const span = Math.max(1, dropoffDist - pickupDist);
   document.querySelector<HTMLElement>('#progress-fill')!.style.width = `${THREE.MathUtils.clamp((distance - pickupDist) / span, 0, 1) * 100}%`;
   document.querySelector('#speed')!.textContent = String(Math.round(speedMps * 2.237)).padStart(2, '0');
@@ -470,18 +574,22 @@ function update(dt: number) {
 }
 
 let uiTimer = 0;
+let frame = 0;
 function animate(now: number) {
-  const dt = Math.min((now - last) / 1000, 0.05);
+  const dt = Math.min((now - last) / 1000, 0.25);
   last = now;
   update(dt);
   uiTimer += dt;
-    if (phase === 'ride' && uiTimer > 2) { renderUI(); uiTimer = 0; }
-  renderer.shadowMap.needsUpdate = true;
+  if (phase === 'ride' && uiTimer > 2) { renderUI(); uiTimer = 0; }
+  frame += 1;
+  renderer.shadowMap.needsUpdate = frame % 2 === 0;
   composer.render();
   requestAnimationFrame(animate);
 }
 renderUI();
 camera.position.copy(walk);
+camera.rotation.order = 'YXZ';
+camera.rotation.set(lookPitch, lookYaw, 0);
 requestAnimationFrame(animate);
 
 window.addEventListener('resize', () => {
@@ -499,6 +607,8 @@ Object.assign(window, {
     position: camera.position.toArray(),
     coordinates: 'meters; origin -97.745,30.264; X east, Y up, Z south',
     vehicle: cab.group.position.toArray(),
+    cameraGap: Number(camera.position.distanceTo(cab.group.position).toFixed(2)),
+    speedMph: Math.round(speedMps * 2.23694),
   }),
   advanceTime: (ms: number) => {
     for (let t = 0; t < ms; t += 16.667) update(Math.min(16.667, ms - t) / 1000);

@@ -169,8 +169,13 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
         const to = ped.side > 0 ? walkW : walkE;
         const side = ped.crossing ? THREE.MathUtils.lerp(from, to, ped.t) : from;
         ped.mesh.position.copy(position).addScaledVector(acrossOf(heading), side);
-        ped.mesh.position.y = ROAD_Y + Math.abs(Math.sin((time + ped.seed) * 6)) * 0.03;
+        ped.mesh.position.y = ROAD_Y;
         ped.mesh.rotation.y = ped.crossing ? heading + Math.PI / 2 * Math.sign(from - to) : heading;
+        const swing = Math.sin((time + ped.seed) * 6.5) * (ped.crossing ? 0.35 : 0.55);
+        ped.mesh.getObjectByName('legL')?.rotation.set(swing, 0, 0);
+        ped.mesh.getObjectByName('legR')?.rotation.set(-swing, 0, 0);
+        ped.mesh.getObjectByName('armL')?.rotation.set(-swing * 0.7, 0, 0);
+        ped.mesh.getObjectByName('armR')?.rotation.set(swing * 0.7, 0, 0);
       }
       return cabBlocked(cabDist, cabSpeed);
     },

@@ -51,8 +51,20 @@ export const CONGRESS_ROUTE: [number, number][] = [
 export const ROAD_Y = 0.16;
 /** Stop short of the intersection so pickup/drop-off sit at the curb. */
 export const STOP_INSET = 22;
+/**
+ * Meters of Congress added south of 2nd Street so the cab can approach
+ * along the avenue instead of appearing already at the curb.
+ */
+export const APPROACH_RUNWAY = 96;
+/** Pull from the travel-lane center toward the east curb at a stop. */
+export const CURB_PULL = 1.2;
 export const PICKUP = { name: 'Congress & 2nd', lon: -97.7442121, lat: 30.2643199 };
 export const DROPOFF = { name: 'Congress & 7th', lon: -97.7424606, lat: 30.2689964 };
+/**
+ * Texas State Capitol. The dome sits just north of the bundled OSM extract,
+ * so the scene places an artistic granite model on the Congress axis.
+ */
+export const CAPITOL = { name: 'Texas State Capitol', lon: -97.740371, lat: 30.274665 };
 
 /** Assigned Megalamp match color shown in the Robotaxi app (official pickup cue). */
 export const MEGALAMP = {

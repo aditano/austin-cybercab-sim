@@ -33,8 +33,8 @@ The app runs in the browser on Windows, macOS, and Linux when the browser and gr
 - Drag on the 3D view to look around.
 - Use **W A S D** to walk in the opening scene.
 - Press **P** to show or hide the request phone, and **F** to toggle fullscreen.
-- Use the top-right graphics button to switch between high and performance settings.
-- On the phone, request a ride, wait for the simulated pickup, and choose **Enter Cybercab**.
+- Use the top-right graphics button to cycle balanced, cinematic, and performance settings. Balanced is the default.
+- On the phone, confirm a ride, match the violet Megalamp and plate, and choose **Enter** when the cab has stopped. WASD returns you to walking while it approaches.
 - In the cabin, choose **Fasten seatbelt**, then **Start Ride** after the doors close. During the ride, adjust the cabin temperature, toggle the generated ambient tone, or pause and resume the trip.
 - At the destination, exit and choose **Take another ride** to repeat the experience.
 
