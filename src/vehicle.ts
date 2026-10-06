@@ -1,33 +1,76 @@
 import * as THREE from 'three';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { MEGALAMP, VEHICLE_PLATE } from './geo';
 
 export type LampMode = 'idle' | 'match';
 
-/** Procedural two-seat Cybercab with RGB Megalamp, butterfly doors, and cabin screen. */
+const OUTER_R = 0.332;
+const TRACK_X = 0.86;
+const AXLE_Z = 1.46;
+
+function paintMaterial(color: number, roughness = 0.32) {
+  return new THREE.MeshPhysicalMaterial({
+    color, metalness: 0.7, roughness, clearcoat: 0.4, clearcoatRoughness: 0.3,
+    envMapIntensity: 0.62, sheen: 0.45, sheenColor: new THREE.Color('#ffd7a0'),
+    emissive: new THREE.Color(color).multiplyScalar(0.15), emissiveIntensity: 0.45,
+  });
+}
+
+/** Low tub: the greenhouse, not this shell, is the cabin. */
+function cybercabBodyGeometry() {
+  const geo = new RoundedBoxGeometry(1.66, 0.36, 3.35, 3, 0.14);
+  const pos = geo.attributes.position;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const beyond = THREE.MathUtils.smoothstep(1.2, 2.08, Math.abs(v.z));
+    const nose = v.z < 0 ? beyond : 0;
+    const tail = v.z > 0 ? beyond : 0;
+    v.x *= 1 - nose * 0.18 - tail * 0.16;
+    v.y *= 1 - nose * 0.08 - tail * 0.06;
+    pos.setXYZ(i, v.x, v.y, v.z);
+  }
+  geo.computeVertexNormals();
+  geo.computeBoundingSphere();
+  return geo;
+}
+
+/**
+ * Enclosed two-seat Cybercab: champagne metal tub, dark glass greenhouse,
+ * butterfly curb door, full-width Megalamp. Artistic proportions from the
+ * published 1,754 mm width and 1,408 mm height — not manufacturer CAD.
+ *
+ * The greenhouse is a full upper shell. Side clips open only the door bays;
+ * sphere-patch doors sit in those bays when shut and swing up from the roof rail.
+ */
 export function createCybercab() {
   const group = new THREE.Group();
   group.name = 'Cybercab';
 
-  const gold = new THREE.MeshPhysicalMaterial({
-    color: 0xb8995a, metalness: 0.88, roughness: 0.22, clearcoat: 1, clearcoatRoughness: 0.1,
-    envMapIntensity: 1.2, sheen: 0.4, sheenColor: new THREE.Color('#d4b06a'), side: THREE.DoubleSide,
-  });
+  const gold = paintMaterial(0xd7a85a, 0.34);
+  const goldTrim = paintMaterial(0xb08a45, 0.32);
   const glass = new THREE.MeshPhysicalMaterial({
-    color: 0x0c1820, metalness: 0.55, roughness: 0.05, transparent: true, opacity: 0.42,
-    envMapIntensity: 1.55, side: THREE.DoubleSide,
+    color: 0x1a242c, metalness: 0.55, roughness: 0.06, transparent: true, opacity: 0.46,
+    envMapIntensity: 1.35, clearcoat: 1, clearcoatRoughness: 0.08, side: THREE.DoubleSide,
+    depthWrite: false,
   });
-  const cabinGlass = glass.clone();
-  cabinGlass.opacity = 0.28; cabinGlass.depthWrite = false;
-  const black = new THREE.MeshStandardMaterial({ color: 0x111417, roughness: 0.42, metalness: 0.35, envMapIntensity: 0.7 });
-  const rubber = new THREE.MeshStandardMaterial({ color: 0x101112, roughness: 0.92 });
-  const alloy = new THREE.MeshStandardMaterial({ color: 0xb8bdba, metalness: 0.95, roughness: 0.16, envMapIntensity: 1.2 });
-  const upholstery = new THREE.MeshStandardMaterial({ color: 0xc2bcae, roughness: 0.88 });
-  const white = new THREE.MeshStandardMaterial({ color: 0xf4fbff, emissive: 0xd7f0ff, emissiveIntensity: 2.4 });
-  const red = new THREE.MeshStandardMaterial({ color: 0xff2a22, emissive: 0xff1a12, emissiveIntensity: 2.2 });
+  const doorGlass = glass.clone();
+  doorGlass.opacity = 0.9;
+  doorGlass.color.setHex(0x101418);
+  doorGlass.polygonOffset = true;
+  doorGlass.polygonOffsetFactor = -1;
+  doorGlass.polygonOffsetUnits = -1;
+  doorGlass.clippingPlanes = [];
+  const black = new THREE.MeshStandardMaterial({ color: 0x121416, roughness: 0.55, metalness: 0.25 });
+  const rubber = new THREE.MeshStandardMaterial({ color: 0x141516, roughness: 0.94 });
+  const discMat = new THREE.MeshStandardMaterial({ color: 0xc4b08a, metalness: 0.82, roughness: 0.28, envMapIntensity: 0.8 });
+  const upholstery = new THREE.MeshStandardMaterial({ color: 0xe7e1d4, roughness: 0.86 });
+  const white = new THREE.MeshStandardMaterial({ color: 0xf4fbff, emissive: 0xd7f0ff, emissiveIntensity: 1.6 });
+  const red = new THREE.MeshStandardMaterial({ color: 0xff2a22, emissive: 0xff1a12, emissiveIntensity: 1.4 });
   const megalampMat = new THREE.MeshStandardMaterial({
-    color: MEGALAMP.color, emissive: MEGALAMP.color, emissiveIntensity: 0.35, roughness: 0.18, metalness: 0.2,
+    color: MEGALAMP.color, emissive: MEGALAMP.color, emissiveIntensity: 0.35, roughness: 0.2, metalness: 0.15,
   });
-  const badgeMat = new THREE.MeshStandardMaterial({ color: 0x1a1d1c, roughness: 0.4 });
+  const amber = new THREE.MeshStandardMaterial({ color: 0xffb000, emissive: 0xff8a00, emissiveIntensity: 0.15 });
 
   const mesh = (g: THREE.BufferGeometry, m: THREE.Material, parent: THREE.Object3D = group) => {
     const o = new THREE.Mesh(g, m);
@@ -37,192 +80,165 @@ export function createCybercab() {
     return o;
   };
 
-  function loft(sections: number[][], mat: THREE.Material, parent: THREE.Object3D = group) {
-    const verts: number[] = [];
-    const indices: number[] = [];
-    sections.forEach(([z, width, bottom, shoulder, crown]) => {
-      [[-width * 0.84, bottom], [-width, shoulder], [-width * 0.77, crown],
-        [width * 0.77, crown], [width, shoulder], [width * 0.84, bottom]].forEach(([x, y]) => verts.push(x, y, z));
-    });
-    for (let s = 0; s < sections.length - 1; s++) {
-      for (let j = 0; j < 6; j++) {
-        const a = s * 6 + j, b = s * 6 + (j + 1) % 6, c = b + 6, d = a + 6;
-        indices.push(a, b, d, b, c, d);
-      }
-    }
-    indices.push(0, 2, 1, 0, 3, 2, 0, 4, 3, 0, 5, 4);
-    const n = (sections.length - 1) * 6;
-    indices.push(n, n + 1, n + 2, n, n + 2, n + 3, n, n + 3, n + 4, n, n + 4, n + 5);
-    for (let i = 0; i < indices.length; i += 3) [indices[i + 1], indices[i + 2]] = [indices[i + 2], indices[i + 1]];
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
-    g.setIndex(indices);
-    g.computeVertexNormals();
-    return mesh(g, mat, parent);
-  }
+  const body = mesh(cybercabBodyGeometry(), gold);
+  body.position.y = 0.48;
+  body.name = 'body';
 
-  loft([
-    [-2.28, 0.68, 0.36, 0.52, 0.58], [-2.05, 0.86, 0.3, 0.66, 0.74],
-    [-1.55, 0.91, 0.29, 0.78, 0.84], [-0.9, 0.925, 0.29, 0.84, 0.88],
-    [0, 0.93, 0.29, 0.845, 0.9], [0.85, 0.925, 0.29, 0.84, 0.89],
-    [1.55, 0.9, 0.31, 0.81, 0.86], [2.2, 0.74, 0.4, 0.67, 0.74],
-  ], gold);
-  loft([[-2.12, 0.76, 0.26, 0.32, 0.36], [-1.1, 0.88, 0.2, 0.28, 0.31], [1.55, 0.86, 0.2, 0.29, 0.32], [2.14, 0.72, 0.32, 0.38, 0.41]], black);
+  const skirt = mesh(new RoundedBoxGeometry(1.42, 0.07, 2.1, 2, 0.03), black);
+  skirt.position.set(0, 0.22, -0.1);
+  skirt.castShadow = false;
 
-  function panel(points: number[], mat: THREE.Material, parent: THREE.Object3D = group) {
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.Float32BufferAttribute(points, 3));
-    g.setIndex([0, 1, 2, 0, 2, 3]);
-    g.computeVertexNormals();
-    return mesh(g, mat, parent);
-  }
-  panel([-0.74, 0.84, -1.2, 0.74, 0.84, -1.2, 0.64, 1.48, -0.22, -0.64, 1.48, -0.22], cabinGlass);
-  panel([-0.64, 1.48, -0.22, 0.64, 1.48, -0.22, 0.63, 1.47, 0.68, -0.63, 1.47, 0.68], glass);
-  panel([-0.63, 1.47, 0.68, 0.63, 1.47, 0.68, 0.78, 0.87, 1.78, -0.78, 0.87, 1.78], glass);
-
-  function bar(a: THREE.Vector3, b: THREE.Vector3, r: number, mat: THREE.Material, parent: THREE.Object3D = group) {
-    const v = b.clone().sub(a);
-    const o = mesh(new THREE.CylinderGeometry(r, r, v.length(), 10), mat, parent);
-    o.position.copy(a).add(b).multiplyScalar(0.5);
-    o.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), v.normalize());
-    return o;
-  }
-  for (const s of [-1, 1]) {
-    bar(new THREE.Vector3(s * 0.76, 0.85, -1.18), new THREE.Vector3(s * 0.66, 1.48, -0.22), 0.032, gold);
-    bar(new THREE.Vector3(s * 0.66, 1.48, -0.22), new THREE.Vector3(s * 0.65, 1.47, 0.68), 0.033, gold);
-    bar(new THREE.Vector3(s * 0.65, 1.47, 0.68), new THREE.Vector3(s * 0.81, 0.88, 1.72), 0.034, gold);
-  }
-
-  const megalamp = mesh(new THREE.BoxGeometry(1.38, 0.034, 0.04), megalampMat);
-  megalamp.position.set(0, 0.55, -2.305);
-  const frontWhite = mesh(new THREE.BoxGeometry(1.32, 0.016, 0.018), white);
-  frontWhite.position.set(0, 0.518, -2.312);
-  const rearLamp = mesh(new THREE.BoxGeometry(1.48, 0.026, 0.034), red);
-  rearLamp.position.set(0, 0.73, 2.19);
-  const amber = new THREE.MeshStandardMaterial({ color: 0xffb000, emissive: 0xff8a00, emissiveIntensity: 0.2 });
-  const hazards: THREE.Mesh[] = [];
-  for (const [x, z, y] of [[-0.86, -2.22, 0.48], [0.86, -2.22, 0.48], [-0.86, 2.16, 0.58], [0.86, 2.16, 0.58]]) {
-    const h = mesh(new THREE.BoxGeometry(0.09, 0.05, 0.04), amber);
-    h.position.set(x, y, z);
-    hazards.push(h);
-  }
-  for (const x of [-0.68, 0.68]) {
-    const lamp = mesh(new THREE.BoxGeometry(0.16, 0.05, 0.03), white);
-    lamp.position.set(x, 0.46, -2.3);
-  }
-  const badge = mesh(new THREE.BoxGeometry(0.34, 0.04, 0.01), badgeMat);
-  badge.position.set(0, 0.5, -2.3);
-  const plateCanvas = document.createElement('canvas');
-  plateCanvas.width = 256; plateCanvas.height = 64;
-  const pctx = plateCanvas.getContext('2d')!;
-  pctx.fillStyle = '#f4f1e6'; pctx.fillRect(0, 0, 256, 64);
-  pctx.fillStyle = '#1a3f7a'; pctx.fillRect(0, 0, 256, 14);
-  pctx.fillStyle = '#fff'; pctx.font = 'bold 10px sans-serif'; pctx.textAlign = 'center'; pctx.fillText('TEXAS', 128, 11);
-  pctx.fillStyle = '#1c1c1c'; pctx.font = 'bold 28px sans-serif'; pctx.fillText(VEHICLE_PLATE, 128, 44);
-  const plateTex = new THREE.CanvasTexture(plateCanvas); plateTex.colorSpace = THREE.SRGBColorSpace;
-  const plate = mesh(new THREE.PlaneGeometry(0.32, 0.08), new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.55 }));
-  plate.position.set(0, 0.42, 2.21);
-  const lampLight = new THREE.PointLight(MEGALAMP.color, 0, 9, 2);
-  lampLight.position.set(0, 0.62, -2.45);
-  group.add(lampLight);
-
-  const wheels: THREE.Group[] = [];
-  for (const x of [-0.88, 0.88]) for (const z of [-1.35, 1.37]) {
-    const w = new THREE.Group();
-    w.position.set(x, 0.355, z);
-    group.add(w);
-    wheels.push(w);
-    const t = mesh(new THREE.TorusGeometry(0.268, 0.09, 14, 36), rubber, w);
-    t.rotation.y = Math.PI / 2;
-    const rim = mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.18, 28), black, w);
-    rim.rotation.z = Math.PI / 2;
-    const side = Math.sign(x);
-    const cap = mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.2, 20), alloy, w);
-    cap.rotation.z = Math.PI / 2;
-    for (let i = 0; i < 7; i++) {
-      const angle = i * Math.PI * 2 / 7;
-      const spoke = mesh(new THREE.BoxGeometry(0.02, 0.2, 0.06), alloy, w);
-      spoke.position.set(side * 0.1, Math.cos(angle) * 0.14, Math.sin(angle) * 0.14);
-      spoke.rotation.x = angle;
-    }
-    const ring = mesh(new THREE.TorusGeometry(0.24, 0.012, 8, 36), alloy, w);
-    ring.rotation.y = Math.PI / 2;
-    ring.position.x = side * 0.108;
-    const arch = mesh(new THREE.TorusGeometry(0.37, 0.024, 8, 28, Math.PI), black);
-    arch.rotation.y = Math.PI / 2;
-    arch.position.set(x, 0.355, z);
-  }
+  const cabinGlass = glass.clone();
+  cabinGlass.opacity = 0.82;
+  cabinGlass.color.setHex(0x141a1e);
+  cabinGlass.roughness = 0.18;
+  cabinGlass.metalness = 0.25;
+  cabinGlass.envMapIntensity = 0.45;
+  cabinGlass.clearcoat = 0.15;
+  const cabin = mesh(new RoundedBoxGeometry(1.42, 0.66, 2.15, 3, 0.14), cabinGlass);
+  cabin.position.set(0, 1.02, -0.28);
+  cabin.castShadow = false;
+  cabin.name = 'canopy';
+  const capMat = gold.clone();
+  capMat.roughness = 0.62;
+  capMat.metalness = 0.45;
+  capMat.clearcoat = 0.15;
+  capMat.emissiveIntensity = 0.04;
+  const capSkin = mesh(new RoundedBoxGeometry(1.28, 0.1, 1.85, 2, 0.05), capMat);
+  capSkin.position.set(0, 1.32, -0.28);
 
   const doors: { pivot: THREE.Group; side: number }[] = [];
   for (const side of [-1, 1]) {
     const pivot = new THREE.Group();
-    pivot.position.set(side * 0.64, 1.42, -0.28);
+    pivot.position.set(side * 0.72, 1.32, -0.28);
     group.add(pivot);
-    panel([side * 0.14, -0.92, -0.52, side * 0.18, -0.9, 1.18, side * 0.16, -0.56, 1.16, side * 0.14, -0.56, -0.5], gold, pivot);
-    panel([side * 0.14, -0.56, -0.5, side * 0.16, -0.56, 1.16, side * -0.08, 0.04, 0.92, side * -0.1, 0.06, 0.08], cabinGlass, pivot);
-    const arm = mesh(new THREE.BoxGeometry(0.075, 0.07, 0.62), black, pivot);
-    arm.position.set(side * -0.04, -0.6, 0.35);
+    const panel = mesh(new RoundedBoxGeometry(0.05, 0.58, 1.7, 2, 0.03), doorGlass, pivot);
+    panel.position.set(side * 0.02, -0.26, 0);
+    panel.castShadow = false;
+    panel.name = side > 0 ? 'doorR' : 'doorL';
+    const skin = mesh(new RoundedBoxGeometry(0.07, 0.07, 1.55, 2, 0.02), goldTrim, pivot);
+    skin.position.set(side * 0.03, -0.5, 0);
+    skin.castShadow = false;
     doors.push({ pivot, side });
   }
 
-  const floor = mesh(new THREE.BoxGeometry(1.55, 0.07, 2.18), black);
-  floor.position.set(0, 0.49, 0.1);
-  function cushion(w: number, h: number, d: number, parent: THREE.Object3D) {
-    const shape = new THREE.Shape();
-    const r = 0.06, x = -w / 2, y = -h / 2;
-    shape.moveTo(x + r, y); shape.lineTo(x + w - r, y); shape.quadraticCurveTo(x + w, y, x + w, y + r);
-    shape.lineTo(x + w, y + h - r); shape.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    shape.lineTo(x + r, y + h); shape.quadraticCurveTo(x, y + h, x, y + h - r);
-    shape.lineTo(x, y + r); shape.quadraticCurveTo(x, y, x + r, y);
-    const geom = new THREE.ExtrudeGeometry(shape, { depth: d, bevelEnabled: true, bevelSegments: 3, steps: 1, bevelSize: 0.025, bevelThickness: 0.025, curveSegments: 8 });
-    geom.translate(0, 0, -d / 2);
-    return mesh(geom, upholstery, parent);
+  const floor = mesh(new THREE.BoxGeometry(1.35, 0.06, 1.7), black);
+  floor.position.set(0, 0.5, 0.05);
+  floor.castShadow = false;
+  const dash = mesh(new RoundedBoxGeometry(1.28, 0.1, 0.36, 2, 0.03), black);
+  dash.position.set(0, 0.78, -0.72);
+  const screen = mesh(new THREE.PlaneGeometry(0.42, 0.16), new THREE.MeshBasicMaterial({ color: 0x101614 }));
+  screen.position.set(0, 0.78, -0.95);
+  screen.rotation.x = -0.55;
+  screen.castShadow = false;
+  const screenGlow = mesh(new THREE.PlaneGeometry(0.32, 0.012), new THREE.MeshBasicMaterial({ color: MEGALAMP.color }));
+  screenGlow.position.set(0, 0.74, -0.9);
+  screenGlow.rotation.x = -0.18;
+  screenGlow.castShadow = false;
+
+  for (const x of [-0.36, 0.36]) {
+    const cushion = mesh(new RoundedBoxGeometry(0.52, 0.12, 0.5, 2, 0.04), upholstery);
+    cushion.position.set(x, 0.62, 0.28);
+    const back = mesh(new RoundedBoxGeometry(0.5, 0.46, 0.1, 2, 0.04), upholstery);
+    back.position.set(x, 0.86, 0.5);
+    back.rotation.x = -0.18;
+    const head = mesh(new RoundedBoxGeometry(0.28, 0.16, 0.08, 2, 0.03), upholstery);
+    head.position.set(x, 1.08, 0.46);
   }
-  for (const x of [-0.4, 0.4]) {
-    const seat = new THREE.Group();
-    seat.position.set(x, 0.62, 0.64);
-    group.add(seat);
-    const base = cushion(0.57, 0.14, 0.58, seat); base.position.z = -0.1;
-    const back = cushion(0.56, 0.55, 0.12, seat); back.position.set(0, 0.31, 0.2); back.rotation.x = -0.13;
-    const head = cushion(0.32, 0.2, 0.115, seat); head.position.set(0, 0.65, 0.23);
-    for (const side of [-1, 1]) {
-      const bolster = cushion(0.07, 0.44, 0.11, seat);
-      bolster.position.set(side * 0.235, 0.28, 0.13);
+
+  const megalamp = mesh(new RoundedBoxGeometry(1.36, 0.055, 0.045, 2, 0.015), megalampMat);
+  megalamp.position.set(0, 0.7, -1.62);
+  megalamp.name = 'megalamp';
+  const frontWhite = mesh(new THREE.BoxGeometry(0.9, 0.012, 0.02), white);
+  frontWhite.position.set(0, 0.66, -1.8);
+  const rearLamp = mesh(new RoundedBoxGeometry(1.28, 0.04, 0.035, 2, 0.01), red);
+  rearLamp.position.set(0, 0.62, 1.9);
+  const hazards: THREE.Mesh[] = [];
+  for (const [x, z] of [[-0.7, -1.7], [0.7, -1.7], [-0.66, 1.82], [0.66, 1.82]]) {
+    const h = mesh(new THREE.BoxGeometry(0.1, 0.045, 0.03), amber);
+    h.position.set(x, z < 0 ? 0.46 : 0.56, z);
+    hazards.push(h);
+  }
+
+  const plateCanvas = document.createElement('canvas');
+  plateCanvas.width = 256;
+  plateCanvas.height = 128;
+  const pctx = plateCanvas.getContext('2d')!;
+  pctx.fillStyle = '#f3f0e4';
+  pctx.fillRect(0, 0, 256, 128);
+  pctx.fillStyle = '#163e86';
+  pctx.fillRect(0, 0, 256, 28);
+  pctx.fillStyle = '#ffffff';
+  pctx.font = '700 16px sans-serif';
+  pctx.textAlign = 'center';
+  pctx.fillText('TEXAS', 128, 20);
+  pctx.fillStyle = '#1a1a1a';
+  pctx.font = '700 52px sans-serif';
+  pctx.fillText(VEHICLE_PLATE, 128, 92);
+  const plateTex = new THREE.CanvasTexture(plateCanvas);
+  plateTex.colorSpace = THREE.SRGBColorSpace;
+  const plate = mesh(new THREE.PlaneGeometry(0.36, 0.16), new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.55 }));
+  plate.position.set(0, 0.46, 1.92);
+
+  const lampLight = new THREE.PointLight(MEGALAMP.color, 0, 5, 2);
+  lampLight.position.set(0, 0.7, -2.45);
+  group.add(lampLight);
+
+  const wheels: THREE.Group[] = [];
+  for (const x of [-TRACK_X, TRACK_X]) {
+    for (const z of [-AXLE_Z, AXLE_Z]) {
+      const w = new THREE.Group();
+      w.position.set(x, OUTER_R, z);
+      group.add(w);
+      wheels.push(w);
+      const tire = mesh(new THREE.TorusGeometry(OUTER_R - 0.09, 0.09, 12, 28), rubber, w);
+      tire.rotation.y = Math.PI / 2;
+      const disc = mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.08, 24), discMat, w);
+      disc.rotation.z = Math.PI / 2;
+      disc.position.x = Math.sign(x) * 0.04;
+      const capRing = mesh(new THREE.TorusGeometry(0.16, 0.012, 6, 20), goldTrim, w);
+      capRing.rotation.y = Math.PI / 2;
+      capRing.position.x = Math.sign(x) * 0.07;
+      const arch = mesh(new THREE.TorusGeometry(0.4, 0.055, 8, 20, Math.PI), black);
+      arch.rotation.y = Math.PI / 2;
+      arch.position.set(x, OUTER_R + 0.02, z);
     }
-    const belt = mesh(new THREE.BoxGeometry(0.034, 0.58, 0.012), black, seat);
-    belt.position.set(-0.16, 0.3, 0.118); belt.rotation.z = -0.3;
   }
-  const dash = mesh(new THREE.BoxGeometry(1.43, 0.075, 0.27), black);
-  dash.position.set(0, 0.86, -0.81); dash.rotation.x = -0.06;
-  const screenFrame = mesh(new THREE.BoxGeometry(0.62, 0.36, 0.025), black);
-  screenFrame.position.set(0, 1.02, -0.7); screenFrame.rotation.x = -0.1;
-  const screen = mesh(new THREE.PlaneGeometry(0.57, 0.32), new THREE.MeshBasicMaterial({ color: 0x0e1614 }));
-  screen.position.set(0, 1.02, -0.684); screen.rotation.x = -0.1;
-  const ambient = new THREE.MeshStandardMaterial({ color: 0xd6bd87, emissive: 0xd6bd87, emissiveIntensity: 1.15 });
-  const strip = mesh(new THREE.BoxGeometry(1.35, 0.006, 0.008), ambient);
-  strip.position.set(0, 0.895, -0.66);
+
+  const contact = new THREE.Mesh(
+    new THREE.CircleGeometry(1.15, 24),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }),
+  );
+  contact.rotation.x = -Math.PI / 2;
+  contact.position.y = 0.015;
+  contact.scale.set(1.05, 1.85, 1);
+  contact.castShadow = false;
+  group.add(contact);
 
   let lampMode: LampMode = 'idle';
   let hazardsOn = false;
   let lampTime = 0;
+  let openAmount = 0;
   let openSide = 1;
+
   function applyLamp(dt: number) {
     lampTime += dt;
-    const blink = Math.sin(lampTime * 11) > 0;
+    const blink = Math.sin(lampTime * 10) > 0;
     switch (lampMode) {
       case 'idle':
-        megalampMat.emissiveIntensity = 0.22;
-        megalampMat.emissive.setHex(0xf2f6ff);
-        megalampMat.color.setHex(0xf2f6ff);
-        red.emissiveIntensity = 1.2;
-        lampLight.intensity = 0;
+        megalampMat.emissiveIntensity = 0.35;
+        megalampMat.emissive.setHex(0xf4f7ff);
+        megalampMat.color.setHex(0xf4f7ff);
+        red.emissiveIntensity = 0.9;
+        lampLight.intensity = 0.15;
+        lampLight.color.setHex(0xf4f7ff);
         break;
       case 'match':
         megalampMat.color.setHex(MEGALAMP.color);
         megalampMat.emissive.setHex(MEGALAMP.color);
-        megalampMat.emissiveIntensity = 1.85 + Math.sin(lampTime * 2.4) * 0.2;
-        red.emissiveIntensity = 2.1;
-        lampLight.intensity = 3.2;
+        megalampMat.emissiveIntensity = 2.1 + Math.sin(lampTime * 2.2) * 0.25;
+        red.emissiveIntensity = 1.5;
+        lampLight.intensity = 0.55;
         lampLight.color.setHex(MEGALAMP.color);
         break;
       default: {
@@ -230,27 +246,28 @@ export function createCybercab() {
         return _never;
       }
     }
-    amber.emissiveIntensity = hazardsOn && blink ? 2.6 : 0.12;
-    if (hazardsOn) red.emissiveIntensity = blink ? 2.8 : 0.25;
+    amber.emissiveIntensity = hazardsOn && blink ? 3 : 0.08;
+    if (hazardsOn) red.emissiveIntensity = blink ? 3.1 : 0.2;
   }
 
   return {
     group,
     megalamp,
-    setDoor(openAmount: number, side = 1) {
-      const a = THREE.MathUtils.clamp(openAmount, 0, 1);
+    /** Minimum camera distance from the cab origin, outside the body. */
+    cameraClearance: 5.6,
+    setDoor(open: number, side = 1) {
+      openAmount = THREE.MathUtils.clamp(open, 0, 1);
       openSide = side;
       for (const door of doors) {
-        const amount = door.side === openSide ? a : 0;
-        door.pivot.rotation.z = -door.side * amount * 0.95;
-        door.pivot.rotation.x = -amount * 0.55;
+        const amount = door.side === openSide ? openAmount : 0;
+        door.pivot.rotation.z = door.side * amount * 1.25;
       }
     },
     setLamp(mode: LampMode) { lampMode = mode; },
     setHazards(on: boolean) { hazardsOn = on; },
     update(dt: number, speed: number) {
       applyLamp(dt);
-      for (const w of wheels) w.rotation.x -= speed * dt / 0.35;
+      for (const w of wheels) w.rotation.x -= speed * dt / OUTER_R;
     },
   };
 }
@@ -259,46 +276,95 @@ export type StreetKind = 'sedan' | 'suv' | 'van' | 'pickup';
 
 export function createStreetCar(kind: StreetKind, paint: number) {
   const group = new THREE.Group();
-  const body = new THREE.MeshPhysicalMaterial({
-    color: paint, metalness: 0.78, roughness: 0.22, clearcoat: 0.7, clearcoatRoughness: 0.18, envMapIntensity: 1.15,
+  const bodyMat = new THREE.MeshPhysicalMaterial({
+    color: paint, metalness: 0.72, roughness: 0.28, clearcoat: 0.55, clearcoatRoughness: 0.22, envMapIntensity: 0.9,
   });
-  const glass = new THREE.MeshPhysicalMaterial({ color: 0x1a2c33, metalness: 0.4, roughness: 0.08, transparent: true, opacity: 0.55, envMapIntensity: 1.3 });
-  const rubber = new THREE.MeshStandardMaterial({ color: 0x141516, roughness: 0.9 });
-  const lamp = new THREE.MeshStandardMaterial({ color: 0xf0ead8, emissive: 0xddd4b6, emissiveIntensity: 0.45 });
+  const glassMat = new THREE.MeshPhysicalMaterial({
+    color: 0x1a2428, metalness: 0.45, roughness: 0.08, transparent: true, opacity: 0.72, envMapIntensity: 1.1,
+  });
+  const rubberMat = new THREE.MeshStandardMaterial({ color: 0x161718, roughness: 0.92 });
+  const lampMat = new THREE.MeshStandardMaterial({ color: 0xf3ecda, emissive: 0xe6d7b0, emissiveIntensity: 0.4 });
+  const tailMat = new THREE.MeshStandardMaterial({ color: 0x8c1c16, emissive: 0x6a1210, emissiveIntensity: 0.35 });
   const add = (g: THREE.BufferGeometry, m: THREE.Material, x: number, y: number, z: number, sx = 1, sy = 1, sz = 1) => {
     const o = new THREE.Mesh(g, m);
-    o.position.set(x, y, z); o.scale.set(sx, sy, sz); o.castShadow = true; o.receiveShadow = true; group.add(o); return o;
+    o.position.set(x, y, z);
+    o.scale.set(sx, sy, sz);
+    o.castShadow = true;
+    o.receiveShadow = true;
+    group.add(o);
+    return o;
   };
-  const box = new THREE.BoxGeometry(1, 1, 1);
   const specs = {
-    sedan: { w: 1.78, h: 0.52, l: 4.35, cabin: 2.2, roof: 0.55 },
-    suv: { w: 1.9, h: 0.7, l: 4.55, cabin: 2.45, roof: 0.72 },
-    van: { w: 1.95, h: 0.85, l: 5.1, cabin: 3.2, roof: 0.95 },
-    pickup: { w: 1.92, h: 0.68, l: 5.2, cabin: 1.85, roof: 0.7 },
+    sedan: { w: 1.78, h: 0.48, l: 4.4, cabinL: 2.05, cabinH: 0.52, cabinZ: -0.05 },
+    suv: { w: 1.88, h: 0.62, l: 4.6, cabinL: 2.35, cabinH: 0.7, cabinZ: 0.05 },
+    van: { w: 1.96, h: 0.78, l: 5.05, cabinL: 3.15, cabinH: 0.95, cabinZ: 0.15 },
+    pickup: { w: 1.92, h: 0.58, l: 5.15, cabinL: 1.7, cabinH: 0.62, cabinZ: -0.7 },
   }[kind];
-  add(box, body, 0, 0.52, 0, specs.w, specs.h, specs.l);
-  add(box, glass, 0, 0.52 + specs.h * 0.55 + specs.roof * 0.35, kind === 'pickup' ? -0.45 : 0.05, specs.w * 0.86, specs.roof, specs.cabin);
-  add(box, body, 0, 0.52 + specs.h * 0.55 + specs.roof * 0.85, kind === 'pickup' ? -0.45 : 0.05, specs.w * 0.9, 0.1, specs.cabin * 0.96);
-  if (kind === 'pickup') add(box, body, 0, 0.62, 1.45, specs.w * 0.92, 0.22, 1.7);
-  add(box, lamp, 0, 0.52, -specs.l * 0.5 + 0.04, specs.w * 0.72, 0.08, 0.06);
-  const wheelGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.22, 14);
+  const box = new RoundedBoxGeometry(1, 1, 1, 2, 0.08);
+  add(box, bodyMat, 0, specs.h * 0.55 + 0.28, 0, specs.w, specs.h, specs.l);
+  add(box, bodyMat, 0, specs.h * 0.38 + 0.3, -specs.l * 0.28, specs.w * 0.92, specs.h * 0.55, specs.l * 0.42);
+  add(box, glassMat, 0, specs.h + 0.28 + specs.cabinH * 0.35, specs.cabinZ, specs.w * 0.84, specs.cabinH, specs.cabinL);
+  add(box, bodyMat, 0, specs.h + 0.28 + specs.cabinH * 0.82, specs.cabinZ, specs.w * 0.78, 0.08, specs.cabinL * 0.92);
+  if (kind === 'pickup') add(box, bodyMat, 0, specs.h * 0.7 + 0.2, 1.35, specs.w * 0.94, 0.28, 1.7);
+  add(box, lampMat, 0, specs.h * 0.45 + 0.28, -specs.l * 0.48, specs.w * 0.72, 0.08, 0.05);
+  add(box, tailMat, 0, specs.h * 0.55 + 0.28, specs.l * 0.48, specs.w * 0.7, 0.07, 0.04);
+  const wheelGeo = new THREE.CylinderGeometry(0.33, 0.33, 0.2, 14);
   wheelGeo.rotateZ(Math.PI / 2);
-  for (const x of [-specs.w * 0.42, specs.w * 0.42]) for (const z of [-specs.l * 0.32, specs.l * 0.32]) {
-    const w = new THREE.Mesh(wheelGeo, rubber);
-    w.position.set(x, 0.33, z); w.castShadow = true; group.add(w);
+  for (const x of [-specs.w * 0.42, specs.w * 0.42]) {
+    for (const z of [-specs.l * 0.32, specs.l * 0.32]) {
+      const w = new THREE.Mesh(wheelGeo, rubberMat);
+      w.position.set(x, 0.33, z);
+      w.castShadow = true;
+      group.add(w);
+    }
   }
   return group;
 }
 
 export function createPedestrian(seed: number) {
   const group = new THREE.Group();
-  const tone = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL(0.08, 0.35, 0.35 + (seed % 5) * 0.06), roughness: 0.8 });
-  const cloth = new THREE.MeshStandardMaterial({ color: new THREE.Color().setHSL((seed * 0.17) % 1, 0.35, 0.38), roughness: 0.85 });
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.16, 0.42, 4, 8), cloth);
-  torso.position.y = 1.05; torso.castShadow = true; group.add(torso);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 10, 8), tone);
-  head.position.y = 1.48; head.castShadow = true; group.add(head);
-  const legs = new THREE.Mesh(new THREE.CapsuleGeometry(0.09, 0.46, 4, 8), cloth);
-  legs.position.y = 0.42; group.add(legs);
+  const skinTones = [0x8d5524, 0xc68642, 0xe0ac69, 0xf1c27d, 0xffdbac, 0x6b4423];
+  const shirts = [0xbf5700, 0x243026, 0x1f2a44, 0xf4f1ea, 0x6e2430, 0x3d4c3a, 0x222222, 0xd7d2c8];
+  const pants = [0x2a3038, 0x3e4a62, 0x1c1c1c, 0x4a3b32, 0x243028];
+  const skin = new THREE.MeshStandardMaterial({ color: skinTones[seed % skinTones.length], roughness: 0.72 });
+  const shirt = new THREE.MeshStandardMaterial({ color: shirts[seed % shirts.length], roughness: 0.84 });
+  const leg = new THREE.MeshStandardMaterial({ color: pants[(seed * 3) % pants.length], roughness: 0.9 });
+  const shoe = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8 });
+
+  const torso = new THREE.Mesh(new RoundedBoxGeometry(0.36, 0.48, 0.2, 2, 0.06), shirt);
+  torso.position.y = 1.18;
+  torso.castShadow = true;
+  group.add(torso);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10), skin);
+  head.position.y = 1.56;
+  head.castShadow = true;
+  group.add(head);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.125, 10, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), new THREE.MeshStandardMaterial({
+    color: [0x1a120e, 0x3a2a22, 0x111111, 0xc4b59a, 0x4a3428][seed % 5], roughness: 0.8,
+  }));
+  hair.position.y = 1.6;
+  group.add(hair);
+
+  const limb = (name: string, x: number, y: number, length: number, mat: THREE.Material) => {
+    const pivot = new THREE.Group();
+    pivot.name = name;
+    pivot.position.set(x, y, 0);
+    const part = new THREE.Mesh(new THREE.CapsuleGeometry(0.045, Math.max(0.05, length - 0.09), 3, 6), mat);
+    part.position.y = -length / 2;
+    part.castShadow = true;
+    pivot.add(part);
+    if (name.startsWith('leg')) {
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.05, 0.16), shoe);
+      foot.position.set(0, -length, 0.03);
+      pivot.add(foot);
+    }
+    group.add(pivot);
+    return pivot;
+  };
+  limb('armL', -0.24, 1.34, 0.48, shirt);
+  limb('armR', 0.24, 1.34, 0.48, shirt);
+  limb('legL', -0.09, 0.9, 0.78, leg);
+  limb('legR', 0.09, 0.9, 0.78, leg);
+  group.scale.setScalar(0.94 + (seed % 4) * 0.03);
   return group;
 }

@@ -32,7 +32,15 @@ Published dimensions: about 1,754 mm width and 1,408 mm height. The procedural v
 
 ## Visual target
 
-A publicly posted high-fidelity teleoperation / city-drive clip (chase camera, reflective paint, dense parked traffic, HUD speedometer) informed lighting, materials, chase camera, and traffic density. This remains a browser Three.js reconstruction with PBR materials, environment reflections, SSAO, bloom, and SMAA — not Unreal Engine or photogrammetry.
+A publicly posted high-fidelity teleoperation / city-drive clip (chase camera, reflective paint, dense parked traffic, HUD speedometer) informed lighting, materials, chase camera, and traffic density. This remains a browser Three.js reconstruction with PBR materials, environment reflections, optional SSAO, bloom, and SMAA — not Unreal Engine or photogrammetry.
+
+The default graphics mode is balanced (shadows, bloom, no SSAO) so the ride keeps real-time on a mid laptop. The top-right control cycles balanced, cinematic (SSAO and a larger shadow map), and performance. Simulation steps catch up to about a quarter-second per frame so a slow paint does not freeze the cab a block away.
+
+The vehicle is an enclosed two-seat pod: champagne lower body, dark glass greenhouse, butterfly doors on the roof rail, aero wheel covers, and a full-width Megalamp. It is sized from the published width and height and sits with its tires on the road mesh. During the approach and at the curb the camera sits ahead and to the curb side so the nose, Megalamp, and door stay outside the body. Once the ride starts it follows from behind and above, looking up Congress.
+
+Downtown reads as Austin rather than a generic glass grid. OSM footprints still supply Frost Bank Tower, The Independent, and The Austonian; the sim adds a recognizable crown, cantilevered floors, and a spire on those footprints. The Texas State Capitol dome is just north of the bundled extract, so an artistic pink-granite capitol is placed on the published coordinate, on axis with Congress. Lady Bird Lake stays the OSM shoreline. The opening view looks north up Congress.
+
+The cab approaches along Congress from the south of 2nd, pulls to the east curb, stops, and only then opens the curb door. City driving is about 25–30 mph, with a short pause for red lights, instead of creeping until the pickup times out. WASD returns to the walk camera during the approach.
 
 ## Map provenance and licensing
 

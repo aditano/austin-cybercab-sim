@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { CAPITOL, ROAD_Y } from './geo';
+import { createStreetCar, type StreetKind } from './vehicle';
 
 type Feature = { id?:number; name?:string; kind?:string; height?:number; levels?:number; lanes?:number; coordinates:number[][] };
 type MapData = { roads:Feature[]; buildings:Feature[]; water:Feature[] };
@@ -54,10 +56,7 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
   const trunk=new THREE.MeshStandardMaterial({color:0x685849,roughness:1});
   const foliage=new THREE.MeshStandardMaterial({color:0x3a5a3c,roughness:.78});
   const leavesB=new THREE.MeshStandardMaterial({color:0x2f4a32,roughness:.82});
-  const waterMaterial=new THREE.MeshPhysicalMaterial({color:0x3e7f86,metalness:0.72,roughness:0.08,transparent:true,opacity:0.88,envMapIntensity:1.6,clearcoat:1,clearcoatRoughness:.12});
-  const carPaint=[0xe8e4dc,0x3d464b,0x657579,0x6b3430].map(color=>new THREE.MeshPhysicalMaterial({color,metalness:.72,roughness:.22,clearcoat:.6,clearcoatRoughness:.2,envMapIntensity:1.1}));
-  const tireMaterial=new THREE.MeshStandardMaterial({color:0x181a1b,roughness:.87});
-  const carLamp=new THREE.MeshStandardMaterial({color:0xe7dfc5,emissive:0xddd1a8,emissiveIntensity:.35,roughness:.22});
+  const waterMaterial=new THREE.MeshPhysicalMaterial({color:0x2a656c,metalness:0.62,roughness:0.14,transparent:true,opacity:0.93,envMapIntensity:1.45,clearcoat:1,clearcoatRoughness:.2});
   const windowMaterial=new THREE.MeshPhysicalMaterial({color:0x3b555b,metalness:.55,roughness:.08,envMapIntensity:1.25});
   const glassMaterials=[0x263c43,0x44616b,0x76918d,0x334954].map(color=>new THREE.MeshPhysicalMaterial({color,metalness:.62,roughness:.08,envMapIntensity:1.2}));
   const frame=new THREE.MeshStandardMaterial({color:0x555d5c,metalness:.7,roughness:.32});
@@ -128,7 +127,8 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
     const winding=signedArea>=0?1:-1;
     // Curtain wall towers, stone offices and older storefronts have distinct bay proportions.
     const curtain=h>60&&index%3!==0;
-    const bay=curtain?3.1:4.0,floor=curtain?3.45:3.8;
+    const tall=h>72;
+    const bay=(curtain?3.2:4.2)*(tall?1.75:1),floor=(curtain?3.5:3.9)*(tall?1.9:1);
     const windowGroups=new Map<THREE.Material,THREE.Matrix4[]>();const obj=new THREE.Object3D();
     for(let e=1;e<pts.length;e++) {
       const a=pts[e-1],b=pts[e],len=a.distanceTo(b);if(len<3||len>350)continue;
@@ -196,31 +196,87 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
     }
   }
   function parkedTraffic(parent:THREE.Object3D,roads:Feature[]) {
-    const wheelGeometry=new THREE.CylinderGeometry(.32,.32,.18,12);wheelGeometry.rotateZ(Math.PI/2);
     const positions:THREE.Vector2[]=[];
+    const kinds:StreetKind[]=['sedan','suv','pickup','sedan','van','suv'];
+    const paints=[0xe8e4dc,0x2c3338,0x8d3a32,0x1e2428,0xd7d3c8,0x4d5960,0x6b7180,0xc9c3b6];
     for(const r of roads) {
       if(!/Congress Avenue|[EW].*2nd Street/.test(r.name||''))continue;
       const pts=r.coordinates.map(point);const major=/Congress/.test(r.name||'');const width=major?Math.max(14,Math.min(23,(r.lanes||4)*3.3)):9;
       for(let i=1;i<pts.length;i++) {
         const a=pts[i-1],b=pts[i],length=a.distanceTo(b);if(length<30)continue;
-        const direction=b.clone().sub(a).normalize(),normal=new THREE.Vector2(direction.y,-direction.x),angle=Math.atan2(direction.x,direction.y);
-        for(let t=20;t<length-10;t+=58) {
-          const c=a.clone().addScaledVector(direction,t).addScaledVector(normal,width/2-1.2);
-          if(c.length()>620||nearJunction(c,23)||positions.some(p=>p.distanceTo(c)<18)||positions.length>=12)continue;
+        const direction=b.clone().sub(a).normalize(),normal=new THREE.Vector2(-direction.y,direction.x);
+        for(let t=20;t<length-10;t+=64) {
+          const c=a.clone().addScaledVector(direction,t).addScaledVector(normal,width/2+0.9);
+          if(c.length()>620||nearJunction(c,26)||positions.some(p=>p.distanceTo(c)<16)||positions.length>=10)continue;
           const index=positions.length;positions.push(c);
-          const part=(side:number,along:number,y:number,w:number,h:number,d:number,mat:THREE.Material)=>box(parent,c.x+normal.x*side+direction.x*along,y,c.y+normal.y*side+direction.y*along,w,h,d,mat,angle);
-          part(0,0,.64,1.82,.6,4.4,carPaint[index%4]);part(0,-.1,1.1,1.56,.68,2.35,windowMaterial);
-          part(0,-.1,1.47,1.6,.12,1.45,carPaint[index%4]);part(0,1.65,.93,1.8,.18,1.05,carPaint[index%4]);
-          part(0,-1.68,.92,1.8,.19,1.04,carPaint[index%4]);
-          for(const side of [-1,1]) {
-            part(side*.61,2.22,.67,.42,.18,.06,carLamp);
-            for(const along of [-1.4,1.4]) {
-              const wheel=new THREE.Mesh(wheelGeometry,tireMaterial);wheel.position.set(c.x+normal.x*side*.92+direction.x*along,.37,c.y+normal.y*side*.92+direction.y*along);wheel.rotation.y=angle;parent.add(wheel);
-            }
-          }
+          const mesh=createStreetCar(kinds[index%kinds.length],paints[index%paints.length]);
+          mesh.position.set(c.x,ROAD_Y,c.y);
+          mesh.rotation.y=Math.atan2(-direction.x,-direction.y);
+          parent.add(mesh);
         }
       }
     }
+  }
+  function dressLandmarks(parent:THREE.Object3D,data:MapData) {
+    const granite=new THREE.MeshStandardMaterial({color:0xd7b09a,roughness:.78});
+    const domeMat=new THREE.MeshStandardMaterial({color:0xf0b5a4,roughness:.4,metalness:.02,emissive:0xff8d73,emissiveIntensity:1.05});
+    const statueMat=new THREE.MeshStandardMaterial({color:0xf6f1e8,roughness:.5});
+    const lit=new THREE.MeshStandardMaterial({color:0xf0d2a0,emissive:0xffb45a,emissiveIntensity:.7});
+    const crownGlass=new THREE.MeshPhysicalMaterial({color:0xb7d0d2,metalness:.55,roughness:.08,transparent:true,opacity:.84,envMapIntensity:1.3});
+    const named=new Map<string,Feature>();
+    for(const b of data.buildings||[]) if(b.name) named.set(b.name,b);
+    const centroid=(coords:number[][])=>{let x=0,z=0;for(const c of coords){const p=point(c);x+=p.x;z+=p.y;}return {x:x/coords.length,z:z/coords.length};};
+    const frost=named.get('Frost Bank Tower');
+    if(frost) {
+      const c=centroid(frost.coordinates),h=frost.height||157;
+      const prism=new THREE.Mesh(new THREE.ConeGeometry(16,42,4),crownGlass);
+      prism.position.set(c.x,h+18,c.z);prism.rotation.y=Math.PI/4;prism.castShadow=true;parent.add(prism);
+      const spike=new THREE.Mesh(new THREE.BoxGeometry(8,46,8),crownGlass);
+      spike.position.set(c.x+5,h+26,c.z);spike.rotation.z=-.38;spike.castShadow=true;parent.add(spike);
+      const ring=new THREE.Mesh(new THREE.TorusGeometry(13,.7,6,4),lit);
+      ring.rotation.x=Math.PI/2;ring.rotation.y=Math.PI/4;ring.position.set(c.x,h+2,c.z);parent.add(ring);
+    }
+    const independent=named.get('The Independent');
+    if(independent) {
+      const c=centroid(independent.coordinates),h=independent.height||209;
+      const slab=new THREE.MeshStandardMaterial({color:0xd5ddd8,roughness:.42,metalness:.22});
+      for(let i=0;i<8;i++) {
+        const shift=(i%2===0?1:-1)*(8+(i%3)*2);
+        box(parent,c.x+shift,h*(.5+i*.055),c.z,24,Math.max(3.4,h*.032),20,slab,.2);
+      }
+    }
+    const austonian=named.get('The Austonian');
+    if(austonian) {
+      const c=centroid(austonian.coordinates),h=austonian.height||190;
+      const spireMat=new THREE.MeshStandardMaterial({color:0xd5dbd8,metalness:.35,roughness:.32});
+      box(parent,c.x,h+7,c.z,11,14,11,spireMat);
+      const tip=new THREE.Mesh(new THREE.ConeGeometry(3.4,22,8),spireMat);
+      tip.position.set(c.x,h+24,c.z);tip.castShadow=true;parent.add(tip);
+    }
+    const cap=point([CAPITOL.lon,CAPITOL.lat]);
+    const cx=cap.x,cz=cap.y;
+    box(parent,cx,16,cz,110,32,72,granite);
+    box(parent,cx,22,cz+38,40,44,20,granite);
+    for(let i=-4;i<=4;i++) box(parent,cx+i*4.2,20,cz+50,1.35,34,1.35,granite);
+    const pediment=new THREE.Mesh(new THREE.ConeGeometry(22,12,4),granite);
+    pediment.position.set(cx,46,cz+46);pediment.rotation.y=Math.PI/4;parent.add(pediment);
+    for(const side of [-1,1]) box(parent,cx+side*46,15,cz,36,26,48,granite);
+    const drum=new THREE.Mesh(new THREE.CylinderGeometry(20,22,26,28),domeMat);
+    drum.position.set(cx,58,cz);drum.castShadow=true;parent.add(drum);
+    const dome=new THREE.Mesh(new THREE.SphereGeometry(30,32,18,0,Math.PI*2,0,Math.PI/2),domeMat);
+    dome.position.set(cx,71,cz);dome.castShadow=true;parent.add(dome);
+    const ribMat=new THREE.MeshStandardMaterial({color:0xf8efe6,roughness:.45,emissive:0xffe2cc,emissiveIntensity:.25});
+    for(let i=0;i<8;i++){
+      const rib=new THREE.Mesh(new THREE.BoxGeometry(.7,22,.7),ribMat);
+      const a=i/8*Math.PI*2;
+      rib.position.set(cx+Math.cos(a)*10,86,cz+Math.sin(a)*10);
+      rib.lookAt(cx,86,cz);
+      parent.add(rib);
+    }
+    const lantern=new THREE.Mesh(new THREE.CylinderGeometry(3.2,4,12,12),domeMat);
+    lantern.position.set(cx,100,cz);parent.add(lantern);
+    const statue=new THREE.Mesh(new THREE.ConeGeometry(1.3,14,6),statueMat);
+    statue.position.set(cx,112,cz);parent.add(statue);
   }
   function createFallback() {
     const coords=(x:number,z:number)=>[-97.745+x/96100,30.264-z/111320];
@@ -307,9 +363,9 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
       geometries.forEach(geometry=>geometry.dispose());
       if(merged){meshes.forEach(mesh=>city.remove(mesh));const mesh=new THREE.Mesh(merged,material);mesh.castShadow=true;mesh.receiveShadow=true;city.add(mesh);}
     }
+    dressLandmarks(city,data);
   }
-  createFallback();
-  fetch(`${import.meta.env.BASE_URL}data/austin.json`).then(r=>{if(!r.ok)throw new Error('Map unavailable');return r.json();}).then((data:MapData)=>{if(data.roads?.length&&data.buildings?.length)render(data);}).catch(()=>{ /* Bundled geographic approximation remains available offline. */ });
+  fetch(`${import.meta.env.BASE_URL}data/austin.json`).then(r=>{if(!r.ok)throw new Error('Map unavailable');return r.json();}).then((data:MapData)=>{if(data.roads?.length&&data.buildings?.length)render(data);else createFallback();}).catch(()=>createFallback());
   let time=0;
   return {update(dt:number){time+=dt;waterMaterial.roughness=.19+Math.sin(time*.3)*.025;}};
 }
