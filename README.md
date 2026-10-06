@@ -42,13 +42,13 @@ The request, pickup, ride timing, estimated time, fare-like UI, cabin functions,
 
 ## Scope and accuracy
 
-The scene uses Three.js with a meshopt-compressed Cybercab glTF, Poly Haven CC0 textures, image-based lighting, and post-processing. It is not photogrammetry, a surveyed digital twin, or an Unreal Engine scene. Building shapes and heights are incomplete approximations. The vehicle is an original sculpted mesh with PBR paint, glass, and tires, not manufacturer CAD. The cabin and phone use original artwork.
+The scene uses Three.js with a meshopt-compressed Cybercab glTF, Poly Haven CC0 textures, image-based lighting, and post-processing. It is not photogrammetry, a surveyed digital twin, or an Unreal Engine scene. Building shapes and heights are incomplete approximations. The Cybercab is an original subdivision-surface model built by `tools/cybercab/build.py`, with PBR paint, glass, and tires. It is not manufacturer CAD. The cabin and phone use original artwork.
 
 The bundled OpenStreetMap extract covers a compact downtown area around Congress Avenue, from the South Congress riverfront through northern downtown, and includes nearby streets, building footprints, and Lady Bird Lake shoreline. The simulated trip runs from Congress & 2nd to Congress & 7th and stays north of the lake; it does not cross the lake or model an Austin-wide route. OSM data is an input to the scene, not a live map feed or a Tesla service-area boundary. See [docs/RESEARCH.md](docs/RESEARCH.md) for source, extraction, and height-estimation details.
 
 ## Asset credits
 
-The Cybercab glTF in `public/models/cybercab.glb` is an original sculpted mesh created for this project family (also used as the authored study in [Tesla Studio](https://github.com/aditano/tesla-studio)). It is meshopt-compressed. It is not a factory scan. A CC BY 4.0 Sketchfab scan by [Grass Grass Grass (@zwir3kk)](https://sketchfab.com/3d-models/tesla-cybercab-3d-model-45c25fd8442b45129e47be2e66449ca3) exists, but the download API requires a Sketchfab login, so that file is not bundled.
+The Cybercab glTF in `public/models/cybercab.glb` is built by `tools/cybercab/build.py`: an original subdivision-surface mesh, meshopt-compressed. It is not manufacturer CAD and not a factory scan. A CC BY 4.0 Sketchfab scan by [Grass Grass Grass (@zwir3kk)](https://sketchfab.com/3d-models/tesla-cybercab-3d-model-45c25fd8442b45129e47be2e66449ca3) exists, but the download API requires a Sketchfab login, so that file is not bundled.
 
 Environment images are [CC0](https://polyhaven.com/license) from [Poly Haven](https://polyhaven.com/):
 

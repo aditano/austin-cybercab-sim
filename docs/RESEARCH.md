@@ -28,7 +28,7 @@ No official downloadable Tesla polygon was found. Third-party reporting on **31 
 
 The [Cybercab overview](https://www.tesla.com/robotaxi/riderguides/cybercab/en_us/GUID-669E83C2-E7DE-40F4-9DBD-C9A32E7F6DFF.html) documents two seats, no pedals or steering wheel, door open/close on the touchscreen, seat controls, support, climate, volume, a top status bar, and an app launcher during trips. An overhead stop button requests an emergency pull-over. This project recreates relevant functions with original artwork — **not a pixel-perfect copy of production software**.
 
-Published dimensions: about 1,754 mm width and 1,408 mm height. The bundled vehicle is an original sculpted glTF in that size range, not manufacturer CAD. A CC BY 4.0 Sketchfab scan (zwir3kk, about 99k triangles) is the higher-detail reference, but its download requires a Sketchfab account, so it is not in this repository.
+Published dimensions: about 1,754 mm width and 1,408 mm height. The bundled vehicle is an original model from `tools/cybercab/build.py`, not manufacturer CAD. A CC BY Sketchfab scan is not bundled.
 
 ## Visual target
 

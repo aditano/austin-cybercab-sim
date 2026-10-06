@@ -7,276 +7,272 @@ import { MEGALAMP, VEHICLE_PLATE } from './geo';
 export type LampMode = 'idle' | 'match';
 
 const WHEEL_R = 0.33;
+const DOOR_OPEN = 1.95;
 
-export type Cybercab = {
-  group: THREE.Group;
-  megalamp: THREE.Object3D;
-  cameraClearance: number;
-  setDoor(open: number, side?: number): void;
-  setLamp(mode: LampMode): void;
-  setHazards(on: boolean): void;
-  update(dt: number, speed: number): void;
-};
+type Axis = 'x' | 'y' | 'z';
 
-function standardMaterial(material: THREE.Material): THREE.MeshStandardMaterial | null {
-  return (material as THREE.MeshStandardMaterial).isMeshStandardMaterial ? material as THREE.MeshStandardMaterial : null;
+function materialsOf(mesh: THREE.Mesh): THREE.Material[] {
+  return Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 }
 
-function champagnePaint() {
-  return new THREE.MeshPhysicalMaterial({
-    name: 'exterior_paint',
-    color: '#c2a36b',
-    metalness: 0.55,
-    roughness: 0.22,
-    clearcoat: 1,
-    clearcoatRoughness: 0.07,
-    envMapIntensity: 0.95,
-    sheen: 0.16,
-    sheenRoughness: 0.38,
-    sheenColor: new THREE.Color('#e7d3a4'),
-    reflectivity: 0.68,
-    ior: 1.5,
-    specularIntensity: 1,
-  });
+function asMesh(obj: THREE.Object3D | undefined, name: string): THREE.Mesh {
+  if (!(obj instanceof THREE.Mesh)) throw new Error(`Cybercab is missing mesh ${name}`);
+  return obj;
 }
 
-function tintedGlass() {
-  return new THREE.MeshPhysicalMaterial({
-    name: 'glass',
-    color: '#6e92a4',
-    metalness: 0.04,
-    roughness: 0.05,
-    clearcoat: 1,
-    clearcoatRoughness: 0.03,
-    envMapIntensity: 1.45,
-    transparent: true,
-    opacity: 0.34,
-    depthWrite: false,
-    side: THREE.DoubleSide,
-    reflectivity: 0.9,
-    ior: 1.5,
-    specularIntensity: 1,
-  });
-}
-
-let sharedPaint: THREE.MeshPhysicalMaterial | null = null;
-let sharedGlass: THREE.MeshPhysicalMaterial | null = null;
-
-function tuneBodyMaterial(material: THREE.Material) {
-  const mat = standardMaterial(material);
-  if (!mat) return material;
-  mat.envMapIntensity = Math.max(mat.envMapIntensity, 1);
-  if (mat.name === 'exterior_paint') return sharedPaint ??= champagnePaint();
-  if (mat.name === 'glass') return sharedGlass ??= tintedGlass();
-  if (mat.name === 'interior_leather') {
-    mat.color.set('#d9cbb6');
-    mat.roughness = 0.58;
-    mat.metalness = 0;
-    mat.envMapIntensity = 0.32;
-    const leather = mat as THREE.MeshPhysicalMaterial;
-    leather.sheen = 0.42;
-    leather.sheenRoughness = 0.36;
-    leather.sheenColor.set('#d9cbb6');
-  } else if (mat.name === 'tire_rubber' || mat.name === 'panel_seal') {
-    mat.roughness = 0.94;
-    mat.metalness = 0;
-    mat.envMapIntensity = 0.25;
-  } else if (mat.name === 'wheel_finish') {
-    mat.color.set('#2c3136');
-    mat.metalness = 0.72;
-    mat.roughness = 0.32;
-    mat.envMapIntensity = 0.7;
-  } else if (mat.name === 'machined_alloy') {
-    mat.color.set('#c5ccd2');
-    mat.metalness = 1;
-    mat.roughness = 0.22;
-    mat.envMapIntensity = 1.15;
-  } else if (mat.name === 'lamp_lens') {
-    const lens = mat as THREE.MeshPhysicalMaterial;
-    lens.roughness = 0.06;
-    lens.transmission = 0;
-    lens.opacity = 0.55;
-    lens.envMapIntensity = 1.3;
-    lens.transparent = true;
-    lens.depthWrite = false;
+function axisMostAligned(obj: THREE.Object3D, worldDir: THREE.Vector3): Axis {
+  obj.updateWorldMatrix(true, true);
+  const local = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)];
+  const names: Axis[] = ['x', 'y', 'z'];
+  let best = 0;
+  let bestDot = -1;
+  for (let i = 0; i < local.length; i++) {
+    const dot = Math.abs(local[i].clone().transformDirection(obj.matrixWorld).dot(worldDir));
+    if (dot > bestDot) {
+      bestDot = dot;
+      best = i;
+    }
   }
-  return material;
+  return names[best];
+}
+
+/** Which local axis swings the door upward. The glTF axis conversion is not assumed. */
+function doorHinge(spin: THREE.Object3D): { axis: Axis; sign: number } {
+  const probe = spin.children.find((child) => child.name.startsWith('door-') && !child.name.includes('frame') && !child.name.includes('glass')) ?? spin;
+  spin.updateWorldMatrix(true, true);
+  const before = new THREE.Box3().setFromObject(probe).getCenter(new THREE.Vector3()).y;
+  const axes: Axis[] = ['x', 'y', 'z'];
+  let best: { axis: Axis; sign: number; lift: number } = { axis: 'y', sign: 1, lift: -1 };
+  for (const axis of axes) {
+    for (const sign of [1, -1]) {
+      spin.rotation.set(0, 0, 0);
+      spin.rotation[axis] = sign * 0.4;
+      spin.updateWorldMatrix(true, true);
+      const lift = new THREE.Box3().setFromObject(probe).getCenter(new THREE.Vector3()).y - before;
+      if (lift > best.lift) best = { axis, sign, lift };
+    }
+  }
+  spin.rotation.set(0, 0, 0);
+  spin.updateWorldMatrix(true, true);
+  return { axis: best.axis, sign: best.sign };
 }
 
 /**
- * Meshopt-compressed Cybercab glTF: champagne clearcoat, canopy glass,
- * butterfly doors, aero covers, and a full-width front light bar.
- * The model is an original sculpt, not a downloaded scan.
+ * Original subdivision-surface Cybercab. The mesh, materials, and hinge pivots
+ * come from tools/cybercab/build.py. Lamp color, the plate, and the door swing
+ * stay under the ride-flow API.
  */
-export function loadCybercab(): Promise<Cybercab> {
-  const loader = new GLTFLoader();
-  loader.setMeshoptDecoder(MeshoptDecoder);
-  return loader.loadAsync(`${import.meta.env.BASE_URL}models/cybercab.glb`).then((gltf) => assembleCybercab(gltf.scene));
-}
-
-function assembleCybercab(model: THREE.Group): Cybercab {
+export async function loadCybercab() {
   const group = new THREE.Group();
   group.name = 'Cybercab';
-  model.name = 'cybercab-mesh';
+
+  const loader = new GLTFLoader();
+  loader.setMeshoptDecoder(MeshoptDecoder);
+  const gltf = await loader.loadAsync(`${import.meta.env.BASE_URL}models/cybercab.glb`);
+  const model = gltf.scene;
   group.add(model);
+  group.updateMatrixWorld(true);
 
-  const doorFL = model.getObjectByName('door_fl');
-  const doorFR = model.getObjectByName('door_fr');
-  const wheels = ['wheel_fl', 'wheel_fr', 'wheel_rl', 'wheel_rr'].map((name) => model.getObjectByName(name));
-  if (!doorFL || !doorFR || wheels.some((wheel) => !wheel)) throw new Error('Cybercab glTF is missing doors or wheels');
-
-  let signature: THREE.MeshStandardMaterial | null = null;
-  let tail: THREE.MeshStandardMaterial | null = null;
-  let head: THREE.MeshStandardMaterial | null = null;
-  let megalamp: THREE.Object3D = group;
+  const named = new Map<string, THREE.Object3D>();
   model.traverse((obj) => {
-    if (obj.name === 'yoke' || obj.name === 'wheel_sport' || /^wheel_(fl|fr|rl|rr)__machined_alloy$/.test(obj.name)) obj.visible = false;
-    const mesh = obj as THREE.Mesh;
-    if (!mesh.isMesh) return;
-    mesh.castShadow = mesh.name.includes('glass') ? false : true;
-    mesh.receiveShadow = true;
-    const sourceMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-    const tuned = sourceMaterials.map((material) => tuneBodyMaterial(material));
-    mesh.material = Array.isArray(mesh.material) ? tuned : tuned[0];
-    for (const material of tuned) {
-      const mat = standardMaterial(material);
-      if (!mat) continue;
-      if (mat.name === 'signature_led') {
-        signature = mat;
-        megalamp = mesh;
-        mesh.name = 'megalamp';
-      } else if (mat.name === 'taillight_led') tail = mat;
-      else if (mat.name === 'headlight_led') head = mat;
+    if (obj.name) named.set(obj.name, obj);
+  });
+
+  model.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    const glass = /glass|windshield/i.test(obj.name);
+    obj.castShadow = !glass;
+    obj.receiveShadow = !glass;
+    for (const mat of materialsOf(obj)) {
+      if (mat instanceof THREE.MeshPhysicalMaterial && mat.metalness > 0.4 && mat.transmission === 0) {
+        mat.envMapIntensity = 0.65;
+      }
     }
   });
+
+  const megalamp = asMesh(named.get('megalamp'), 'megalamp');
+  const megalampMat = (materialsOf(megalamp)[0] as THREE.MeshStandardMaterial).clone();
+  megalamp.material = megalampMat;
+
+  const glowMat = new THREE.MeshBasicMaterial({
+    color: 0xf4f7ff, transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  });
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.45, 0.14), glowMat);
+  glow.name = 'megalamp-glow';
+  glow.castShadow = false;
+  glow.rotation.y = Math.PI;
+  const lampPos = new THREE.Vector3();
+  megalamp.getWorldPosition(lampPos);
+  group.worldToLocal(lampPos);
+  glow.position.copy(lampPos);
+  glow.position.z -= 0.03;
+  group.add(glow);
+
+  const lampLight = new THREE.PointLight(0xf4f7ff, 0.25, 9, 2);
+  lampLight.position.copy(lampPos);
+  lampLight.position.z -= 0.45;
+  group.add(lampLight);
+
+  const hazardMeshes = ['hazard-fl', 'hazard-fr', 'hazard-rl', 'hazard-rr'].map((name) => asMesh(named.get(name), name));
+  const amber = (materialsOf(hazardMeshes[0])[0] as THREE.MeshStandardMaterial).clone();
+  for (const hazard of hazardMeshes) hazard.material = amber;
+
+  const rearBar = asMesh(named.get('rear-lightbar'), 'rear-lightbar');
+  const red = (materialsOf(rearBar)[0] as THREE.MeshStandardMaterial).clone();
+  rearBar.material = red;
+  const rearLow = named.get('rear-bumper-lamp');
+  if (rearLow instanceof THREE.Mesh) rearLow.material = red;
+
+  const screenCanvas = document.createElement('canvas');
+  screenCanvas.width = 1024;
+  screenCanvas.height = 480;
+  const sctx = screenCanvas.getContext('2d')!;
+  sctx.fillStyle = '#101418';
+  sctx.fillRect(0, 0, 1024, 480);
+  sctx.fillStyle = '#8ea0a6';
+  sctx.font = '600 22px sans-serif';
+  sctx.fillText('DESTINATION', 56, 78);
+  sctx.fillStyle = '#f4f1ea';
+  sctx.font = '600 54px sans-serif';
+  sctx.fillText('Congress & 7th', 56, 156);
+  sctx.fillStyle = '#c24bff';
+  sctx.fillRect(56, 210, 280, 8);
+  sctx.fillStyle = '#9aa8a4';
+  sctx.font = '28px sans-serif';
+  sctx.fillText('Buckle up, then Start Ride', 56, 280);
+  const screenTex = new THREE.CanvasTexture(screenCanvas);
+  screenTex.colorSpace = THREE.SRGBColorSpace;
+  const screen = asMesh(named.get('front-screen'), 'front-screen');
+  screen.material = new THREE.MeshBasicMaterial({ map: screenTex });
+  screen.castShadow = false;
 
   const plateCanvas = document.createElement('canvas');
   plateCanvas.width = 256;
   plateCanvas.height = 128;
-  const plateCtx = plateCanvas.getContext('2d')!;
-  plateCtx.fillStyle = '#f3f0e4';
-  plateCtx.fillRect(0, 0, 256, 128);
-  plateCtx.fillStyle = '#163e86';
-  plateCtx.fillRect(0, 0, 256, 28);
-  plateCtx.fillStyle = '#ffffff';
-  plateCtx.font = '700 16px sans-serif';
-  plateCtx.textAlign = 'center';
-  plateCtx.fillText('TEXAS', 128, 20);
-  plateCtx.fillStyle = '#1a1a1a';
-  plateCtx.font = '700 52px sans-serif';
-  plateCtx.fillText(VEHICLE_PLATE, 128, 92);
+  const pctx = plateCanvas.getContext('2d')!;
+  pctx.fillStyle = '#f3f0e4';
+  pctx.fillRect(0, 0, 256, 128);
+  pctx.fillStyle = '#163e86';
+  pctx.fillRect(0, 0, 256, 28);
+  pctx.fillStyle = '#ffffff';
+  pctx.font = '700 16px sans-serif';
+  pctx.textAlign = 'center';
+  pctx.fillText('TEXAS', 128, 20);
+  pctx.fillStyle = '#1a1a1a';
+  pctx.font = '700 52px sans-serif';
+  pctx.fillText(VEHICLE_PLATE, 128, 92);
   const plateTex = new THREE.CanvasTexture(plateCanvas);
   plateTex.colorSpace = THREE.SRGBColorSpace;
-  const plate = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.42, 0.18),
-    new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.45, metalness: 0.05 }),
-  );
-  plate.position.set(0, 0.5, 2.07);
-  plate.castShadow = false;
-  group.add(plate);
+  const plate = asMesh(named.get('plate'), 'plate');
+  const plateMat = (materialsOf(plate)[0] as THREE.MeshStandardMaterial).clone();
+  plateMat.map = plateTex;
+  plateMat.color.setHex(0xffffff);
+  plateMat.roughness = 0.55;
+  plate.material = plateMat;
 
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xf4f7ff, transparent: true, opacity: 0.18, depthWrite: false,
-    blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  const lod0 = named.get('lod0') ?? null;
+  const lod1 = named.get('body-lod1') ?? null;
+  if (lod1) lod1.visible = false;
+
+  const doorSpins = (['r', 'l'] as const).map((suffix) => {
+    const spin = named.get(`door-hinge-${suffix}`);
+    if (!spin) throw new Error(`Cybercab is missing door-hinge-${suffix}`);
+    return { spin, side: suffix === 'r' ? 1 : -1, ...doorHinge(spin) };
   });
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.42, 0.07), glowMat);
-  glow.position.set(0, 0.582, -2.075);
-  glow.castShadow = false;
-  group.add(glow);
 
-  const lampLight = new THREE.PointLight(MEGALAMP.color, 0.2, 8, 2);
-  lampLight.position.set(0, 0.72, -2.4);
-  group.add(lampLight);
+  const spins = (['fl', 'fr', 'rl', 'rr'] as const).map((which) => {
+    const spin = named.get(`wheel-spin-${which}`);
+    if (!spin) throw new Error(`Cybercab is missing wheel-spin-${which}`);
+    return { spin, axis: axisMostAligned(spin, new THREE.Vector3(1, 0, 0)) };
+  });
+  const steers = (['fl', 'fr'] as const).map((which) => {
+    const steer = named.get(`wheel-steer-${which}`);
+    if (!steer) throw new Error(`Cybercab is missing wheel-steer-${which}`);
+    return { steer, axis: axisMostAligned(steer, new THREE.Vector3(0, 1, 0)) };
+  });
 
-  const shadowCanvas = document.createElement('canvas');
-  shadowCanvas.width = shadowCanvas.height = 256;
-  const shadowCtx = shadowCanvas.getContext('2d')!;
-  const gradient = shadowCtx.createRadialGradient(128, 128, 18, 128, 128, 124);
-  gradient.addColorStop(0, 'rgba(0,0,0,0.62)');
-  gradient.addColorStop(0.55, 'rgba(0,0,0,0.28)');
-  gradient.addColorStop(1, 'rgba(0,0,0,0)');
-  shadowCtx.fillStyle = gradient;
-  shadowCtx.fillRect(0, 0, 256, 256);
   const contact = new THREE.Mesh(
-    new THREE.PlaneGeometry(2.5, 4.6),
-    new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(shadowCanvas), transparent: true, depthWrite: false }),
+    new THREE.CircleGeometry(1.15, 24),
+    new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }),
   );
   contact.rotation.x = -Math.PI / 2;
-  contact.position.y = 0.012;
+  contact.position.y = 0.015;
+  contact.scale.set(1.05, 1.85, 1);
   contact.castShadow = false;
-  contact.receiveShadow = false;
   group.add(contact);
 
   let lampMode: LampMode = 'idle';
   let hazardsOn = false;
   let lampTime = 0;
+  let openAmount = 0;
+  let prevYaw = group.rotation.y;
+  let steerAngle = 0;
 
   function applyLamp(dt: number) {
     lampTime += dt;
     const blink = Math.sin(lampTime * 10) > 0;
-    if (signature) {
-      switch (lampMode) {
-        case 'idle':
-          signature.color.set('#f7fbff');
-          signature.emissive.set('#f4f7ff');
-          signature.emissiveIntensity = 3.2;
-          glowMat.color.set('#f4f7ff');
-          glowMat.opacity = 0.16;
-          lampLight.color.set('#f4f7ff');
-          lampLight.intensity = 0.35;
-          break;
-        case 'match':
-          signature.color.set(MEGALAMP.color);
-          signature.emissive.set(MEGALAMP.color);
-          signature.emissiveIntensity = 5.4;
-          glowMat.color.set(MEGALAMP.color);
-          glowMat.opacity = 0.55;
-          lampLight.color.set(MEGALAMP.color);
-          lampLight.intensity = 0.7;
-          break;
-        default: {
-          const neverMode: never = lampMode;
-          return neverMode;
-        }
+    switch (lampMode) {
+      case 'idle':
+        megalampMat.emissiveIntensity = 0.45;
+        megalampMat.emissive.setHex(0xf4f7ff);
+        megalampMat.color.setHex(0xf4f7ff);
+        glowMat.color.setHex(0xf4f7ff);
+        glowMat.opacity = 0.18;
+        red.emissiveIntensity = 0.9;
+        lampLight.intensity = 0.25;
+        lampLight.color.setHex(0xf4f7ff);
+        break;
+      case 'match':
+        megalampMat.color.setHex(MEGALAMP.color);
+        megalampMat.emissive.setHex(MEGALAMP.color);
+        megalampMat.emissiveIntensity = 2.4 + Math.sin(lampTime * 2.2) * 0.2;
+        glowMat.color.setHex(MEGALAMP.color);
+        glowMat.opacity = 0.55;
+        red.emissiveIntensity = 1.5;
+        lampLight.intensity = 0.4;
+        lampLight.color.setHex(MEGALAMP.color);
+        break;
+      default: {
+        const _never: never = lampMode;
+        return _never;
       }
     }
-    if (tail) tail.emissiveIntensity = hazardsOn ? (blink ? 8 : 0.25) : 3.1;
-    if (head) head.emissiveIntensity = hazardsOn ? (blink ? 5.5 : 0.35) : 3.4;
+    amber.emissiveIntensity = hazardsOn && blink ? 3 : 0.08;
+    if (hazardsOn) red.emissiveIntensity = blink ? 3.1 : 0.2;
   }
 
-  const bodyRails = ['body__panel_seal', 'body__satin_trim']
-    .map((name) => model.getObjectByName(name))
-    .filter((node): node is THREE.Object3D => Boolean(node));
-
-  return {
+  const cab = {
     group,
     megalamp,
+    /** Minimum camera distance from the cab origin, outside the body. */
     cameraClearance: 5.6,
     setDoor(open: number, side = 1) {
-      const amount = THREE.MathUtils.clamp(open, 0, 1);
-      const swing = (door: THREE.Object3D, doorSide: number) => {
-        const openAmount = doorSide === side ? amount : 0;
-        // Hinge is on the roof centerline. Yaw clears the opening; roll lifts the wing.
-        door.rotation.order = 'XYZ';
-        door.rotation.x = 0;
-        door.rotation.y = doorSide * openAmount * 0.28;
-        door.rotation.z = doorSide * openAmount * 1.12;
-      };
-      swing(doorFR, 1);
-      swing(doorFL, -1);
-      // Those rails are merged into the body, so they would cut across the open cabin.
-      for (const rail of bodyRails) rail.visible = amount < 0.08;
+      openAmount = THREE.MathUtils.clamp(open, 0, 1);
+      for (const door of doorSpins) {
+        const swing = door.side === side ? openAmount : 0;
+        door.spin.rotation[door.axis] = door.sign * swing * DOOR_OPEN;
+      }
     },
     setLamp(mode: LampMode) { lampMode = mode; },
     setHazards(on: boolean) { hazardsOn = on; },
-    update(dt: number, speed: number) {
+    update(dt: number, speed: number, viewDistance = 8) {
       applyLamp(dt);
-      for (const wheel of wheels) {
-        if (wheel) wheel.rotation.x -= speed * dt / WHEEL_R;
-      }
+      for (const wheel of spins) wheel.spin.rotation[wheel.axis] -= speed * dt / WHEEL_R;
+      const yaw = group.rotation.y;
+      const dyaw = Math.atan2(Math.sin(yaw - prevYaw), Math.cos(yaw - prevYaw));
+      prevYaw = yaw;
+      const target = THREE.MathUtils.clamp(-dyaw / Math.max(dt, 1e-3) * 0.12, -0.4, 0.4);
+      steerAngle = THREE.MathUtils.damp(steerAngle, speed > 0.4 ? target : 0, 6, dt);
+      for (const steer of steers) steer.steer.rotation[steer.axis] = steerAngle;
+      const far = viewDistance > 22 && openAmount < 0.05;
+      if (lod0) lod0.visible = !far;
+      if (lod1) lod1.visible = far;
     },
   };
+  return cab;
 }
+
+export type Cybercab = Awaited<ReturnType<typeof loadCybercab>>;
 
 export type StreetKind = 'sedan' | 'suv' | 'van' | 'pickup';
 

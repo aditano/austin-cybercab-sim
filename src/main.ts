@@ -450,11 +450,14 @@ const desiredCam = new THREE.Vector3();
 const localCam = new THREE.Vector3();
 const invQuat = new THREE.Quaternion();
 
+let holdCam = false;
+
 function updateCamera(dt: number) {
+  if (holdCam) return;
   const view = cam;
   switch (view) {
     case 'cabin': {
-      const local = new THREE.Vector3(0, 0.84, -0.2);
+      const local = new THREE.Vector3(0.36, 1.14, -0.06);
       local.applyMatrix4(cab.group.matrixWorld);
       camera.position.copy(local);
       camera.rotation.order = 'YXZ';
@@ -573,7 +576,7 @@ function update(dt: number) {
   const wantDoor = (phase === 'pickup' && elapsed > 0.35) || (phase === 'boarded' && !belted) || ((phase === 'arrived' || phase === 'exited') && doorRequested) ? 1 : 0;
   door = THREE.MathUtils.damp(door, wantDoor, 3.2, dt);
   cab.setDoor(door, 1);
-  cab.update(dt, speedMps);
+  cab.update(dt, speedMps, camera.position.distanceTo(cab.group.position));
   cab.group.updateMatrixWorld();
   updateCamera(dt);
   sun.position.copy(cab.group.position).add(sunPosition.clone().normalize().multiplyScalar(280));
@@ -626,6 +629,13 @@ function mountCab(loaded: Cybercab) {
       renderUI();
       composer.render();
     },
+    frameVehicle: (eye: number[], look: number[]) => {
+      holdCam = true;
+      camera.position.copy(new THREE.Vector3(eye[0], eye[1], eye[2]).applyMatrix4(cab.group.matrixWorld));
+      camera.lookAt(new THREE.Vector3(look[0], look[1], look[2]).applyMatrix4(cab.group.matrixWorld));
+      composer.render();
+    },
+    releaseCamera: () => { holdCam = false; },
   });
 }
 
