@@ -30,12 +30,13 @@ The app runs in the browser on Windows, macOS, and Linux when the browser and gr
 
 ## Controls and ride flow
 
-- Drag on the 3D view to look around.
-- Use **W A S D** to walk in the opening scene.
-- Press **P** to show or hide the request phone, and **F** to toggle fullscreen.
-- Use the top-right graphics button to cycle balanced, cinematic, ultra, and performance settings. Balanced is the default on a normal GPU. Ultra raises the shadow map and pixel ratio. Software renderers stay on performance.
-- On the phone, confirm a ride, match the violet Megalamp and plate, and choose **Enter** when the cab has stopped. WASD returns you to walking while it approaches.
-- In the cabin, choose **Fasten seatbelt**, then **Start Ride** after the doors close. During the ride, adjust the cabin temperature, toggle the generated ambient tone, or pause and resume the trip.
+- A loading screen stays up while the map, city, and vehicle come in.
+- Drag on the 3D view to look around. On a phone, **Walk the block** reveals a thumbstick; drag the scene to look.
+- Use **W A S D** to walk along the avenue. Walking stays in a band beside the cab lane so the camera does not enter buildings.
+- Press **P** to show or hide the request phone, or use the on-screen **Phone** button. **F** toggles fullscreen. **P** is ignored while the cab is moving; the phone returns at arrival.
+- Use the top-right graphics button to cycle balanced, cinematic, ultra, and performance. Balanced is the default on a desktop GPU. Touch screens and software renderers start on performance. If frames run long, the preset steps down once. Ultra uses a 2048 shadow map on desktop and 1024 on a coarse pointer.
+- On the phone, pick a destination. Places outside the approximated service area disable Confirm. Confirm a ride, match the violet Megalamp and plate, and choose **Enter** when the cab has stopped. **Cancel ride** is available at the curb as well as during dispatch.
+- In the cabin, choose **Fasten seatbelt**, then **Start Ride** after the doors close. During the ride, adjust the cabin temperature, toggle the generated ambient tone, or pause and resume the trip. Refreshing keeps the in-progress trip in this tab.
 - At the destination, exit and choose **Take another ride** to repeat the experience.
 
 The request, pickup, ride timing, estimated time, fare-like UI, cabin functions, and trip completion are all simulated locally. They do not contact Tesla or emergency services. The phone map renders the bundled OSM geography and route. The interface is an original approximation, not a Tesla app screenshot.

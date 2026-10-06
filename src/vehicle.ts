@@ -3,11 +3,11 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { MEGALAMP, VEHICLE_PLATE } from './geo';
+import { doorAngle } from './logic';
 
 export type LampMode = 'idle' | 'match';
 
 const WHEEL_R = 0.33;
-const DOOR_OPEN = 1.95;
 
 type Axis = 'x' | 'y' | 'z';
 
@@ -34,27 +34,6 @@ function axisMostAligned(obj: THREE.Object3D, worldDir: THREE.Vector3): Axis {
     }
   }
   return names[best];
-}
-
-/** Which local axis swings the door upward. The glTF axis conversion is not assumed. */
-function doorHinge(spin: THREE.Object3D): { axis: Axis; sign: number } {
-  const probe = spin.children.find((child) => child.name.startsWith('door-') && !child.name.includes('frame') && !child.name.includes('glass')) ?? spin;
-  spin.updateWorldMatrix(true, true);
-  const before = new THREE.Box3().setFromObject(probe).getCenter(new THREE.Vector3()).y;
-  const axes: Axis[] = ['x', 'y', 'z'];
-  let best: { axis: Axis; sign: number; lift: number } = { axis: 'y', sign: 1, lift: -1 };
-  for (const axis of axes) {
-    for (const sign of [1, -1]) {
-      spin.rotation.set(0, 0, 0);
-      spin.rotation[axis] = sign * 0.4;
-      spin.updateWorldMatrix(true, true);
-      const lift = new THREE.Box3().setFromObject(probe).getCenter(new THREE.Vector3()).y - before;
-      if (lift > best.lift) best = { axis, sign, lift };
-    }
-  }
-  spin.rotation.set(0, 0, 0);
-  spin.updateWorldMatrix(true, true);
-  return { axis: best.axis, sign: best.sign };
 }
 
 /**
@@ -188,12 +167,14 @@ export async function loadCybercab() {
 
   const lod0 = named.get('lod0') ?? null;
   const lod1 = named.get('body-lod1') ?? null;
+  const windshield = named.get('windshield') ?? null;
+  const windshieldBezel = named.get('windshield-bezel') ?? null;
   if (lod1) lod1.visible = false;
 
   const doorSpins = (['r', 'l'] as const).map((suffix) => {
     const spin = named.get(`door-hinge-${suffix}`);
     if (!spin) throw new Error(`Cybercab is missing door-hinge-${suffix}`);
-    return { spin, side: suffix === 'r' ? 1 : -1, ...doorHinge(spin) };
+    return { spin, side: suffix === 'r' ? 1 : -1 as const };
   });
 
   const spins = (['fl', 'fr', 'rl', 'rr'] as const).map((which) => {
@@ -268,10 +249,32 @@ export async function loadCybercab() {
       openAmount = THREE.MathUtils.clamp(open, 0, 1);
       for (const door of doorSpins) {
         const swing = door.side === side ? openAmount : 0;
-        door.spin.rotation[door.axis] = door.sign * swing * DOOR_OPEN;
+        // Parent orient already aims this node's Y along the roof rail.
+        door.spin.rotation.set(0, doorAngle(door.side > 0 ? 'r' : 'l', swing), 0);
       }
     },
+    doorMetrics() {
+      const mesh = named.get('door-r');
+      if (!mesh) return { lift: 0, top: 0, span: 0 };
+      const box = new THREE.Box3().setFromObject(mesh);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      return {
+        lift: center.y - group.position.y,
+        top: box.max.y - group.position.y,
+        span: Math.max(size.x, size.y, size.z),
+      };
+    },
     setLamp(mode: LampMode) { lampMode = mode; },
+    /** Glass transmission is opaque from inside the shell, so the rider view hides it. */
+    setCabinView(inside: boolean) {
+      if (windshield) windshield.visible = !inside;
+      if (windshieldBezel) windshieldBezel.visible = !inside;
+      for (const name of ['door-glass-l', 'door-glass-r', 'shade-l', 'shade-r']) {
+        const part = named.get(name);
+        if (part) part.visible = !inside;
+      }
+    },
     setHazards(on: boolean) { hazardsOn = on; },
     update(dt: number, speed: number, viewDistance = 8) {
       applyLamp(dt);

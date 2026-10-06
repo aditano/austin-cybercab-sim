@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { pointInRing } from './logic';
+
+export { pointInRing };
 
 /** Scene origin: downtown Congress Avenue. */
 export const ORIGIN: [number, number] = [-97.745, 30.264];
@@ -24,17 +27,6 @@ export const AUSTIN_ROBOTAXI_GEOFENCE: [number, number][] = [
 ];
 
 export const GEOFENCE_NOTE = 'Approx. 288 sq mi Austin service area (reported 31 Aug 2026). Not an official Tesla polygon.';
-
-export function pointInRing(lon: number, lat: number, ring: [number, number][]): boolean {
-  let inside = false;
-  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
-    const [xi, yi] = ring[i];
-    const [xj, yj] = ring[j];
-    const intersect = (yi > lat) !== (yj > lat) && lon < ((xj - xi) * (lat - yi)) / (yj - yi + 1e-12) + xi;
-    if (intersect) inside = !inside;
-  }
-  return inside;
-}
 
 /** Congress Avenue OSM vertices from 2nd Street to 7th Street (northbound). */
 export const CONGRESS_ROUTE: [number, number][] = [

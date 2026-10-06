@@ -6,6 +6,10 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 }, dev
 page.setDefaultTimeout(60000);
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
+await page.addInitScript(() => {
+  window.__cybercabPause = true;
+  sessionStorage.removeItem('cybercab-ride');
+});
 await page.goto(process.env.SIM_URL || 'http://localhost:5173', { waitUntil: 'domcontentloaded' });
 await page.waitForFunction(() => typeof window.advanceTime === 'function');
 await page.waitForTimeout(1500);

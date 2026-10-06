@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { createPedestrian, createStreetCar, type StreetKind } from './vehicle';
 import { ROAD_Y } from './geo';
+import { stepPedestrian } from './logic';
 
 export type LightPhase = 'green' | 'yellow' | 'red';
 
@@ -95,6 +96,7 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
 
   const colors = [0x32d46a, 0xf0c43a, 0xff3b30];
   let time = 0;
+  const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function cabBlocked(cabDist: number, cabSpeed: number): { stop: boolean; stopDist: number; phase: LightPhase } {
     let stopDist = 1e9;
@@ -143,7 +145,10 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
         if (ahead && ahead.dist - car.dist < 10) speed = Math.min(speed, Math.max(0, ahead.dist - car.dist - 6));
         if (Math.abs(car.lane - OFFSET.follow) < 0.2 && cabDist > car.dist && cabDist - car.dist < 10) speed = Math.min(speed, Math.max(0, cabDist - car.dist - 6));
         car.dist += speed * dt;
-        if (car.dist > routeLength + 30) car.dist = 8 + Math.random() * 12;
+        if (car.dist > routeLength + 30) {
+          car.dist = 8 + Math.random() * 12;
+          if (Math.abs(car.dist - cabDist) < 18) car.dist = Math.max(8, cabDist - 24);
+        }
         const { position, heading } = sample(THREE.MathUtils.clamp(car.dist, 0.2, routeLength - 0.2));
         car.mesh.position.copy(position).addScaledVector(acrossOf(heading), car.lane);
         car.mesh.position.y = ROAD_Y;
@@ -152,16 +157,18 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
       for (const ped of peds) {
         const nearCross = crossings.find(d => Math.abs(d - ped.dist) < 6);
         const phase = lightAt(time, 0);
-        if (nearCross && phase === 'red' && !ped.crossing && Math.random() < dt * 0.12) {
-          ped.crossing = true; ped.t = 0;
-        }
-        if (ped.crossing) {
-          ped.t += dt * 1.35 / 16;
-          if (ped.t > 1) { ped.crossing = false; ped.side *= -1; }
-        } else {
-          ped.dist += 1.15 * dt;
-          if (ped.dist > routeLength - 8) ped.dist = 8;
-        }
+        const stepped = stepPedestrian(ped, {
+          dt,
+          cabDist,
+          red: phase === 'red',
+          nearCross: !!nearCross,
+          wantStart: !!(nearCross && phase === 'red' && !ped.crossing && Math.random() < dt * 0.12),
+          routeLength,
+        });
+        ped.crossing = stepped.crossing;
+        ped.t = stepped.t;
+        ped.dist = stepped.dist;
+        if (stepped.sideFlip) ped.side *= -1;
         const { position, heading } = sample(THREE.MathUtils.clamp(ped.dist, 0.2, routeLength - 0.2));
         const walkE = OFFSET.sidewalk;
         const walkW = OFFSET.oppWalk;
@@ -171,7 +178,7 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
         ped.mesh.position.copy(position).addScaledVector(acrossOf(heading), side);
         ped.mesh.position.y = ROAD_Y;
         ped.mesh.rotation.y = ped.crossing ? heading + Math.PI / 2 * Math.sign(from - to) : heading;
-        const swing = Math.sin((time + ped.seed) * 6.5) * (ped.crossing ? 0.35 : 0.55);
+        const swing = reduceMotion ? 0 : Math.sin((time + ped.seed) * 6.5) * (ped.crossing ? 0.35 : 0.55);
         ped.mesh.getObjectByName('legL')?.rotation.set(swing, 0, 0);
         ped.mesh.getObjectByName('legR')?.rotation.set(-swing, 0, 0);
         ped.mesh.getObjectByName('armL')?.rotation.set(-swing * 0.7, 0, 0);

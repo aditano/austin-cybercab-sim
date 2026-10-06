@@ -7,13 +7,17 @@ import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
-import { createWorld } from './world';
+import { createWorld, loadMapData } from './world';
 import { loadCybercab, type Cybercab } from './vehicle';
 import { createCityLife } from './life';
 import {
   APPROACH_RUNWAY, AUSTIN_ROBOTAXI_GEOFENCE, CAPITOL, CONGRESS_ROUTE, CURB_PULL, DROPOFF, GEOFENCE_NOTE, MEGALAMP,
   PICKUP, ROAD_Y, STOP_INSET, VEHICLE_LABEL, VEHICLE_PLATE, measurePath, pointInRing, project, samplePath,
 } from './geo';
+import {
+  DESTINATIONS, blockedSpeed, defaultQuality, parseSnapshot, pixelRatioFor, shadowMapSize, togglePhone,
+  type Quality, type RideSnapshot,
+} from './logic';
 import './style.css';
 
 type Phase = 'explore' | 'dispatch' | 'pickup' | 'boarded' | 'ride' | 'arrived' | 'exited' | 'complete';
@@ -29,10 +33,18 @@ app.innerHTML = `<canvas id="scene"></canvas><div class="vignette"></div>
 <section id="cabin" class="cabin-panel" hidden></section>
 <div id="toast" role="status"></div>
 <footer><div class="controls"><span><kbd>DRAG</kbd> Look</span><span><kbd>W A S D</kbd> Walk</span><span><kbd>C</kbd> Camera</span><span><kbd>P</kbd> Phone</span><span><kbd>F</kbd> Fullscreen</span></div><div class="concept">INDEPENDENT CONCEPT SIMULATION <span>·</span> <a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap</a><a href="./docs.html" target="_blank">Sources & accuracy ↗</a></div></footer>
-<div class="ride-progress"><div id="progress-fill"></div></div>`;
+<div class="ride-progress"><div id="progress-fill"></div></div>
+<div id="stick" hidden aria-label="Walk joystick"><div id="nub"></div></div>
+<button id="show-phone" type="button" hidden>Phone</button>
+<div id="phase-status" class="sr-only" aria-live="polite"></div>`;
+
+const coarsePointer = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 0;
+const ios = /iPad|iPhone|iPod/i.test(navigator.userAgent);
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+if (coarsePointer) document.body.dataset.pointer = 'coarse';
 
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: ios ? 'default' : 'high-performance' });
 renderer.setPixelRatio(Math.min(devicePixelRatio, 1.25));
 renderer.setSize(innerWidth, innerHeight);
 renderer.shadowMap.enabled = true;
@@ -56,16 +68,18 @@ su.rayleigh.value = 1.8;
 su.mieCoefficient.value = 0.006;
 su.mieDirectionalG.value = 0.82;
 const sunPosition = new THREE.Vector3(-0.95, 0.155, 0.42);
+const sunOffset = sunPosition.clone().normalize().multiplyScalar(280);
 su.sunPosition.value.copy(sunPosition);
 scene.add(sky);
 const pmrem = new THREE.PMREMGenerator(renderer);
 pmrem.compileEquirectangularShader();
-scene.environment = pmrem.fromScene(sky as unknown as THREE.Scene, 0.03).texture;
+const skyEnv = pmrem.fromScene(sky as unknown as THREE.Scene, 0.03).texture;
+scene.environment = skyEnv;
 scene.environmentIntensity = 0.95;
 
 scene.add(new THREE.HemisphereLight('#ffd7b0', '#5c4638', 0.28));
 const sun = new THREE.DirectionalLight('#ffb56a', 3.05);
-sun.position.copy(sunPosition).normalize().multiplyScalar(280);
+sun.position.copy(sunOffset);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
 sun.shadow.camera.left = -46;
@@ -79,7 +93,7 @@ sun.shadow.radius = 2.5;
 scene.add(sun);
 scene.add(sun.target);
 
-const world = createWorld(scene);
+const world = createWorld(scene, (text) => setBoot(text, text.startsWith('Building') ? 55 : 35));
 let cab: Cybercab;
 
 const laneOffset = new THREE.Vector3(4.7, 0, 1.5);
@@ -154,10 +168,13 @@ let cam: Cam = 'walk';
 let mapOverview = true;
 let doorRequested = false;
 let hold = 0;
-let blockedFor = 0;
 let curbState = 0;
-type Quality = 'balanced' | 'cinematic' | 'ultra' | 'performance';
-let quality: Quality = softwareGl ? 'performance' : 'balanced';
+let destinationId = 'congress';
+let quality: Quality = defaultQuality({ software: softwareGl, coarse: coarsePointer });
+let qualityAdapted = false;
+let stickX = 0;
+let stickY = 0;
+const RIDE_KEY = 'cybercab-ride';
 const pickup = sample(pickupDist);
 
 let walk = pickup.position.clone().add(curbShift(pickupDist, 1.8));
@@ -179,7 +196,7 @@ function mapPoint(v: THREE.Vector3, overview = false) {
 }
 
 let uiReady = false;
-fetch(`${import.meta.env.BASE_URL}data/austin.json`).then(r => r.json()).then(data => {
+void loadMapData().then(data => {
   const path = (coords: number[][]) => coords.map(([lon, lat], i) => {
     const [x, y] = mapPoint(project(lon, lat));
     return `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`;
@@ -209,15 +226,60 @@ function mapMarkup(progress = 0) {
     <path d="${geofencePath()}" fill="#3d6b5228" stroke="#2f5a44" stroke-width="${overview ? 2 : 0.6}" stroke-dasharray="4 3"/>
     ${overview ? '' : mapFeatures}<path d="${line}" stroke="#283d2e" stroke-width="${overview ? 2 : 4}" fill="none" stroke-linecap="round"/>
     <circle cx="${ex}" cy="${ey}" r="7" fill="#283d2e" stroke="white" stroke-width="3"/>
-    <circle cx="${px}" cy="${py}" r="8" fill="${MEGALAMP.hex}" stroke="white" stroke-width="3"/>
+    <circle data-cab="1" cx="${px}" cy="${py}" r="8" fill="${MEGALAMP.hex}" stroke="white" stroke-width="3"/>
     <text x="18" y="22">${overview ? 'AUSTIN SERVICE AREA' : 'CONGRESS AVE'}</text></svg>
     <span class="map-pin">AUSTIN · N ↑</span>
-    <button class="map-expand" aria-label="Toggle map zoom" id="center-map">${overview ? '⊕' : '⌖'}</button></div>`;
+    <button class="map-expand" type="button" aria-label="Toggle map zoom">${overview ? '⊕' : '⌖'}</button></div>`;
+}
+
+function setBoot(text: string, pct: number) {
+  const status = document.querySelector('#boot-status');
+  const fill = document.querySelector<HTMLElement>('#boot-fill');
+  if (status) status.textContent = text;
+  if (fill) fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+}
+
+function hideBoot() {
+  document.getElementById('boot')?.remove();
+}
+
+function readRide(): string | null {
+  try { return sessionStorage.getItem(RIDE_KEY); } catch { return null; }
+}
+
+function saveRide() {
+  try {
+    if (phase === 'explore' || phase === 'complete') {
+      sessionStorage.removeItem(RIDE_KEY);
+      return;
+    }
+    const snap: RideSnapshot = {
+      v: 1, phase, distance, belted, paused, temperature, muted, destinationId, phoneVisible,
+    };
+    sessionStorage.setItem(RIDE_KEY, JSON.stringify(snap));
+  } catch { /* private mode */ }
+}
+
+function showGpuFailure(message: string) {
+  let panel = document.getElementById('gpu-failure');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'gpu-failure';
+    panel.innerHTML = '<p></p><button type="button">Reload</button>';
+    panel.querySelector('button')?.addEventListener('click', () => location.reload());
+    document.body.appendChild(panel);
+  }
+  const copy = panel.querySelector('p');
+  if (copy) copy.textContent = message;
 }
 
 function setPhase(next: Phase) {
   phase = next;
   elapsed = 0;
+  if (next === 'arrived' || next === 'exited' || next === 'complete') phoneVisible = true;
+  const status = document.querySelector('#phase-status');
+  if (status) status.textContent = next;
+  saveRide();
   renderUI();
 }
 function toast(text: string) {
@@ -251,31 +313,38 @@ function renderUI() {
   phone.classList.toggle('matching', phase === 'dispatch' || phase === 'pickup');
   cabin.hidden = phase !== 'ride' && phase !== 'boarded' && phase !== 'arrived';
   const map = mapMarkup((distance - pickupDist) / Math.max(1, dropoffDist - pickupDist));
-  const inside = pointInRing(PICKUP.lon, PICKUP.lat, AUSTIN_ROBOTAXI_GEOFENCE) && pointInRing(DROPOFF.lon, DROPOFF.lat, AUSTIN_ROBOTAXI_GEOFENCE);
+  const dest = DESTINATIONS.find((item) => item.id === destinationId) ?? DESTINATIONS[0];
+  const destInside = pointInRing(dest.lon, dest.lat, AUSTIN_ROBOTAXI_GEOFENCE);
+  const inside = pointInRing(PICKUP.lon, PICKUP.lat, AUSTIN_ROBOTAXI_GEOFENCE) && destInside;
   const canStart = belted && door < 0.08;
-  if (phase === 'explore') body.innerHTML = `<h2>Where to?</h2><p class="phone-sub">Enter a destination inside the service area. This trip stays on Congress.</p>${map}
+  const walkBtn = '<button class="secondary" id="walk-around" type="button">Walk the block</button>';
+  const destinationField = `<label class="dest-label" for="destination">Destination<select id="destination">${DESTINATIONS.map((item) => `<option value="${item.id}"${item.id === dest.id ? ' selected' : ''}>${item.name}</option>`).join('')}</select></label>`;
+  if (phase === 'explore') body.innerHTML = `<h2>Where to?</h2><p class="phone-sub">Choose a destination inside the service area. This preview still drives Congress.</p>${map}
+    ${destinationField}
     <div class="route-card"><div class="route-row"><i class="dot"></i><div><small>PICKUP</small><b>${PICKUP.name}</b></div><span class="chip in">In area</span></div>
-    <div class="route-row"><i class="square"></i><div><small>DESTINATION</small><b>${DROPOFF.name}</b></div><span class="chip ${inside ? 'in' : 'out'}">${inside ? 'In area' : 'Outside'}</span></div></div>
-    <div class="fare"><span>Cybercab <small>2 seats · No wheel · Simulated fare</small></span><b>~3 min<small>Est. wait under 1 min</small></b></div>
-    <p class="geo-note">${GEOFENCE_NOTE}</p>
+    <div class="route-row"><i class="square"></i><div><small>DESTINATION</small><b>${dest.name}</b></div><span class="chip ${destInside ? 'in' : 'out'}">${destInside ? 'In area' : 'Outside'}</span></div></div>
+    <div class="fare"><span><b class="fare-name">Cybercab</b> <small>2 seats · No wheel · Simulated fare</small></span><b>~3 min<small>Est. wait under 1 min</small></b></div>
+    <p class="geo-note">${destInside ? GEOFENCE_NOTE : 'That place is outside the approximated service area, so Confirm stays off.'}</p>
     <button class="primary" id="request" ${inside ? '' : 'disabled'}>Confirm <span>↗</span></button>
+    ${walkBtn}
     <p class="micro">Independent concept. No real booking, fare, or Tesla connection. Hours simulated 6:00–23:00.</p>`;
   if (phase === 'dispatch') body.innerHTML = `<h2>On the way.</h2><p class="phone-sub">Match the front light bar and the plate before you get in.</p>${map}
     <p class="vehicle-kicker">${VEHICLE_LABEL}</p>${matchCard()}
-    <button class="secondary" id="cancel">Cancel request</button>`;
+    <button class="secondary" id="cancel" type="button">Cancel request</button>${walkBtn}`;
   if (phase === 'pickup') body.innerHTML = `<h2>Your Cybercab has arrived.</h2><p class="phone-sub">At the curb. Hazards are on. Match the front light bar, then the plate.</p>${map}
     <p class="arrive-distance">At the east curb</p>${matchCard()}
-    <button class="primary" id="enter">Enter <span>→</span></button>`;
+    <button class="primary" id="enter" type="button">Enter <span>→</span></button>
+    <button class="secondary" id="cancel" type="button">Cancel ride</button>${walkBtn}`;
   if (phase === 'boarded') body.innerHTML = `<h2>Buckle up.</h2><p class="phone-sub">The door closes once everyone is buckled. Then tap Start Ride here or on the cabin screen.</p>
     <button class="secondary" id="buckle-phone">${belted ? 'Seatbelt fastened' : 'Fasten seatbelt'}</button>
     <button class="primary" id="start-phone" ${canStart ? '' : 'disabled'}>${belted && !canStart ? 'Closing door…' : 'Start Ride'}</button>`;
   if (phase === 'arrived') body.innerHTML = `<h2>You have arrived.</h2><p class="phone-sub">${DROPOFF.name}. Parked with hazards on. Open a door when you are ready to step out.</p>${map}
     <button class="primary" id="exit-phone">Open door</button>`;
   if (phase === 'exited') body.innerHTML = `<h2>Complete your trip.</h2><p class="phone-sub">Once you are clear of the vehicle, finish in the app. Check for belongings. The doors close after that.</p>${map}
-    <button class="primary" id="finish">Complete trip</button>`;
+    <button class="primary" id="finish">Complete trip</button>${walkBtn}`;
   if (phase === 'complete') body.innerHTML = `<div class="complete-icon">✓</div><h2>Trip complete.</h2><p class="phone-sub">Thanks for riding. This was a local simulation, not a Tesla trip.</p>${map}
     <div class="trip-summary"><span>Distance<b>${((dropoffDist - pickupDist) / 1000).toFixed(2)} km</b></span><span>Megalamp<b>${MEGALAMP.name}</b></span></div>
-    <button class="primary" id="restart">Take another ride <span>↗</span></button>`;
+    <button class="primary" id="restart">Take another ride <span>↗</span></button>${walkBtn}`;
   if (phase === 'boarded' || phase === 'ride' || phase === 'arrived') {
     const remainingM = Math.max(0, dropoffDist - distance);
     const eta = Math.max(1, Math.ceil(remainingM / 12));
@@ -288,7 +357,7 @@ function renderUI() {
       <div class="cabin-grid"><div class="cabin-map">${map}</div>
       <div class="cabin-copy"><small>${kicker}</small>
       <h2>${DROPOFF.name}</h2>
-      <p>${phase === 'boarded' ? boardedCopy : phase === 'arrived' ? 'In Park. Hazards on. Open the door, step out, then complete the trip in the app.' : `${eta} min · ${remainingM / 1000 > 0 ? (remainingM / 1000).toFixed(2) : '0.00'} km remaining`}</p>
+      <p>${phase === 'boarded' ? boardedCopy : phase === 'arrived' ? 'In Park. Hazards on. Open the door, step out, then complete the trip in the app.' : `<span id="ride-eta">${eta} min · ${remainingM / 1000 > 0 ? (remainingM / 1000).toFixed(2) : '0.00'} km remaining</span>`}</p>
       <div class="cabin-actions">${phase === 'boarded' ? `<button class="secondary" id="buckle">${belted ? 'Seatbelt fastened' : 'Fasten seatbelt'}</button><button class="primary" id="start-ride" ${canStart ? '' : 'disabled'}>Start Ride</button>` : phase === 'arrived' ? '<button class="primary" id="exit-cabin">Open door</button>' : `<button class="secondary" id="pause">${paused ? 'Resume ride' : 'Pull over'}</button>`}</div>
       </div></div>
       <div class="cabin-bottom">
@@ -298,17 +367,17 @@ function renderUI() {
         <button id="support" class="ghost">Support</button>
       </div>`;
   }
-  const fasten = () => { if (!belted) { belted = true; renderUI(); } };
+  const fasten = () => { if (!belted) { belted = true; saveRide(); renderUI(); } };
   const tryStart = () => {
     if (phase !== 'boarded' || !belted || door > 0.08) return;
     startAudio();
     cam = 'chase';
     mapOverview = false;
     paused = false;
-    blockedFor = 0;
     setPhase('ride');
   };
   bind('request', () => {
+    if (!inside) { toast('That destination is outside the service area.'); return; }
     distance = stageDist;
     speedMps = 0;
     hold = 0;
@@ -319,7 +388,20 @@ function renderUI() {
     setPhase('dispatch');
     toast('On the way. Match Violet and plate ' + VEHICLE_PLATE + '. WASD walks.');
   });
-  bind('cancel', () => { cam = 'walk'; distance = stageDist; setPhase('explore'); });
+  bind('cancel', () => {
+    cam = 'walk';
+    distance = stageDist;
+    speedMps = 0;
+    doorRequested = false;
+    belted = false;
+    paused = false;
+    setPhase('explore');
+  });
+  bind('walk-around', () => {
+    phoneVisible = false;
+    if (phase !== 'ride' && phase !== 'boarded' && phase !== 'arrived') cam = 'walk';
+    renderUI();
+  });
   bind('enter', () => {
     lookYaw = cab.group.rotation.y;
     lookPitch = 0.08;
@@ -346,7 +428,7 @@ function renderUI() {
   bind('finish', () => { doorRequested = false; setPhase('complete'); });
   bind('restart', () => {
     distance = stageDist; speedMps = 0; paused = false; belted = false; cam = 'walk'; doorRequested = false; mapOverview = true;
-    hold = 0; blockedFor = 0; curbState = 0;
+    hold = 0; curbState = 0;
     walk = pickup.position.clone().add(curbShift(pickupDist, 1.8));
     walk.y = ROAD_Y + 1.62;
     const again = project(CAPITOL.lon, CAPITOL.lat).sub(walk);
@@ -354,16 +436,60 @@ function renderUI() {
     lookPitch = -0.11;
     setPhase('explore');
   });
-  bind('pause', () => { paused = !paused; renderUI(); });
-  bind('temp-down', () => { temperature = Math.max(16, temperature - 1); renderUI(); });
-  bind('temp-up', () => { temperature = Math.min(28, temperature + 1); renderUI(); });
-  bind('music', () => { muted = !muted; if (gain) gain.gain.value = muted ? 0 : 0.018; renderUI(); });
-  bind('center-map', () => { mapOverview = !mapOverview; renderUI(); });
+  bind('pause', () => { paused = !paused; saveRide(); renderUI(); });
+  bind('temp-down', () => { temperature = Math.max(16, temperature - 1); saveRide(); renderUI(); });
+  bind('temp-up', () => { temperature = Math.min(28, temperature + 1); saveRide(); renderUI(); });
+  bind('music', () => {
+    muted = !muted;
+    if (!audio && !muted) startAudio();
+    if (gain) gain.gain.value = muted ? 0 : 0.018;
+    saveRide();
+    renderUI();
+  });
+  document.querySelectorAll<HTMLButtonElement>('.map-expand').forEach((button) => {
+    button.addEventListener('click', () => { mapOverview = !mapOverview; renderUI(); });
+  });
+  document.querySelector('#destination')?.addEventListener('change', (event) => {
+    const value = (event.target as HTMLSelectElement).value;
+    if (DESTINATIONS.some((item) => item.id === value)) destinationId = value;
+    saveRide();
+    renderUI();
+  });
   bind('support', () => toast('Simulated support only. This does not contact Tesla or emergency services.'));
+  syncChrome();
 }
 
 function bind(id: string, fn: () => void) {
   document.getElementById(id)?.addEventListener('click', fn);
+}
+
+function syncChrome() {
+  const stick = document.getElementById('stick');
+  const showPhone = document.getElementById('show-phone');
+  const walking = cam === 'walk' && phase !== 'ride' && phase !== 'boarded' && phase !== 'arrived';
+  if (stick) stick.hidden = !(coarsePointer && walking && !phoneVisible);
+  if (showPhone) showPhone.hidden = !coarsePointer || phoneVisible || phase === 'ride' || phase === 'boarded' || phase === 'arrived';
+  const status = document.querySelector('#phase-status');
+  const heading = document.querySelector('#phone h2');
+  if (status && heading) status.textContent = heading.textContent || phase;
+}
+
+function updateRideReadout() {
+  const remainingM = Math.max(0, dropoffDist - distance);
+  const eta = Math.max(1, Math.ceil(remainingM / 12));
+  const etaEl = document.querySelector('#ride-eta');
+  if (etaEl) etaEl.textContent = `${eta} min · ${(remainingM / 1000).toFixed(2)} km remaining`;
+}
+
+function updateMapDots() {
+  const overview = mapOverview || phase === 'explore';
+  const progress = THREE.MathUtils.clamp((distance - pickupDist) / Math.max(1, dropoffDist - pickupDist), 0, 1);
+  const along = pickupDist + progress * (dropoffDist - pickupDist);
+  const [px, py] = mapPoint(sample(along).position, overview);
+  document.querySelectorAll('[data-cab]').forEach((node) => {
+    node.setAttribute('cx', String(px));
+    node.setAttribute('cy', String(py));
+  });
 }
 
 let audio: AudioContext | undefined;
@@ -372,7 +498,7 @@ function startAudio() {
   if (audio) return;
   audio = new AudioContext();
   gain = audio.createGain();
-  gain.gain.value = 0.018;
+  gain.gain.value = muted ? 0 : 0.018;
   gain.connect(audio.destination);
   [110, 164.81, 220].forEach(f => {
     const o = audio!.createOscillator();
@@ -383,8 +509,12 @@ function startAudio() {
 }
 
 let dragging = false, lx = 0, ly = 0;
-canvas.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; canvas.setPointerCapture(e.pointerId); });
+canvas.addEventListener('pointerdown', e => {
+  if ((e.target as Node) !== canvas) return;
+  dragging = true; lx = e.clientX; ly = e.clientY; canvas.setPointerCapture(e.pointerId);
+});
 canvas.addEventListener('pointerup', () => { dragging = false; });
+canvas.addEventListener('pointercancel', () => { dragging = false; });
 canvas.addEventListener('pointermove', e => {
   if (!dragging) return;
   const dx = (e.clientX - lx) * 0.0035;
@@ -398,49 +528,78 @@ canvas.addEventListener('pointermove', e => {
   }
   lx = e.clientX; ly = e.clientY;
 });
-window.addEventListener('keydown', e => {
-  if (e.repeat) return;
-  keys.add(e.key.toLowerCase());
-  if (e.key.toLowerCase() === 'p') { phoneVisible = !phoneVisible; renderUI(); }
-  if (e.key.toLowerCase() === 'c') {
+async function toggleFullscreen() {
+  const root = document.documentElement as HTMLElement & { webkitRequestFullscreen?: () => void };
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else if (root.requestFullscreen) await root.requestFullscreen();
+    else root.webkitRequestFullscreen?.();
+  } catch {
+    toast('Fullscreen is unavailable in this browser.');
+  }
+}
+
+window.addEventListener('keydown', (event) => {
+  const target = event.target;
+  if (target instanceof HTMLElement && (target.tagName === 'INPUT' || target.tagName === 'SELECT' || target.tagName === 'TEXTAREA')) return;
+  if (event.repeat) return;
+  const key = event.key.toLowerCase();
+  keys.add(key);
+  if (key === 'p') {
+    const next = togglePhone(phase, phoneVisible);
+    if (next.ignored) toast('The phone comes back when you arrive.');
+    else { phoneVisible = next.visible; renderUI(); }
+  }
+  if (key === 'c') {
     cam = cam === 'chase' ? (phase === 'boarded' || phase === 'ride' || phase === 'arrived' ? 'cabin' : 'walk') : 'chase';
+    syncChrome();
     toast(cam === 'chase' ? 'Chase camera' : cam === 'cabin' ? 'Cabin camera' : 'Walk camera');
   }
-  if (e.key.toLowerCase() === 'f') {
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void document.documentElement.requestFullscreen();
-  }
+  if (key === 'f') void toggleFullscreen();
 });
 window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
 window.addEventListener('blur', () => keys.clear());
-function applyQuality(next: Quality, announce = true) {
-  const heavy = next === 'cinematic' || next === 'ultra';
-  quality = softwareGl && heavy ? 'performance' : next;
+function applyQuality(next: Quality, announce = true, fromUser = false) {
+  if (fromUser) qualityAdapted = false;
+  if (softwareGl && (next === 'cinematic' || next === 'ultra')) {
+    if (announce) toast('Software graphics stay on the performance preset.');
+    next = 'performance';
+  }
+  quality = next;
   const perf = quality === 'performance';
   const ultra = quality === 'ultra';
   const cine = quality === 'cinematic' || ultra;
-  const ratio = perf ? 1 : Math.min(devicePixelRatio, ultra ? 1.75 : cine ? 1.5 : 1.25);
+  const ratio = pixelRatioFor(devicePixelRatio, quality, { software: softwareGl, coarse: coarsePointer });
+  const shadow = shadowMapSize(quality, coarsePointer);
   renderer.setPixelRatio(ratio);
   renderer.setSize(innerWidth, innerHeight);
   composer.setPixelRatio(ratio);
   composer.setSize(innerWidth, innerHeight);
-  renderer.shadowMap.enabled = !perf;
-  sun.castShadow = !perf;
-  sun.shadow.mapSize.set(ultra ? 4096 : cine ? 2048 : 1024, ultra ? 4096 : cine ? 2048 : 1024);
+  renderer.shadowMap.enabled = shadow > 0;
+  sun.castShadow = shadow > 0;
+  if (shadow > 0) sun.shadow.mapSize.set(shadow, shadow);
   sun.shadow.radius = ultra ? 8 : cine ? 4 : 2.5;
   if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
-  if (ssaoPass) ssaoPass.enabled = cine;
+  if (ssaoPass) ssaoPass.enabled = cine && !coarsePointer;
   bloomPass.threshold = 0.96;
   bloomPass.strength = perf ? 0.04 : ultra ? 0.16 : cine ? 0.12 : 0.08;
   bloomPass.radius = ultra ? 0.42 : 0.32;
-  smaaPass.enabled = !perf;
+  smaaPass.enabled = !perf && !coarsePointer;
   scene.environmentIntensity = ultra ? 1.25 : perf ? 0.9 : 1.15;
   const label = ultra ? 'Ultra graphics' : cine ? 'Cinematic graphics' : perf ? 'Performance graphics' : 'Balanced graphics';
+  document.querySelector('#settings')?.setAttribute('aria-label', `${label}. Activate to change graphics quality.`);
   if (announce) toast(label);
 }
+applyQuality(quality, false);
 bind('settings', () => {
   const order: Quality[] = ['balanced', 'cinematic', 'ultra', 'performance'];
-  applyQuality(order[(order.indexOf(quality) + 1) % order.length]);
+  applyQuality(order[(order.indexOf(quality) + 1) % order.length], true, true);
+});
+bind('show-phone', () => { phoneVisible = true; renderUI(); });
+document.querySelector('#boot-retry')?.addEventListener('click', () => location.reload());
+canvas.addEventListener('webglcontextlost', (event) => {
+  event.preventDefault();
+  showGpuFailure('Graphics reset. Reload the page to continue.');
 });
 
 const chaseOffset = new THREE.Vector3();
@@ -448,6 +607,51 @@ const lookTarget = new THREE.Vector3();
 const desiredCam = new THREE.Vector3();
 const localCam = new THREE.Vector3();
 const invQuat = new THREE.Quaternion();
+const walkMove = new THREE.Vector3();
+const upAxis = new THREE.Vector3(0, 1, 0);
+const cabinEye = new THREE.Vector3();
+const cabinLook = new THREE.Vector3();
+const routeSide = new THREE.Vector3();
+const routeTangent = new THREE.Vector3();
+
+function constrainWalk() {
+  let best = 8;
+  let bestD = Infinity;
+  const end = Math.max(12, routeLength - 8);
+  for (let d = 8; d <= end; d += 8) {
+    const p = sample(d).position;
+    const dx = walk.x - p.x;
+    const dz = walk.z - p.z;
+    const dist = dx * dx + dz * dz;
+    if (dist < bestD) { bestD = dist; best = d; }
+  }
+  const here = sample(best);
+  const ahead = sample(Math.min(routeLength - 0.4, best + 6));
+  routeTangent.copy(ahead.position).sub(here.position);
+  routeTangent.y = 0;
+  if (routeTangent.lengthSq() < 1e-6) return;
+  routeTangent.normalize();
+  routeSide.set(Math.cos(here.heading), 0, -Math.sin(here.heading));
+  const dx = walk.x - here.position.x;
+  const dz = walk.z - here.position.z;
+  let lateral = dx * routeSide.x + dz * routeSide.z;
+  const along = THREE.MathUtils.clamp(dx * routeTangent.x + dz * routeTangent.z, -6, 6);
+  lateral = THREE.MathUtils.clamp(lateral, -12, 8);
+  walk.x = here.position.x + routeTangent.x * along + routeSide.x * lateral;
+  walk.z = here.position.z + routeTangent.z * along + routeSide.z * lateral;
+  walk.y = ROAD_Y + 1.62;
+}
+
+function applyWalk(dt: number) {
+  const ix = (Number(keys.has('d')) - Number(keys.has('a'))) + stickX;
+  const iz = (Number(keys.has('s')) - Number(keys.has('w'))) + stickY;
+  walkMove.set(ix, 0, iz);
+  if (walkMove.lengthSq() > 1) walkMove.setLength(1);
+  if (walkMove.lengthSq() < 0.0004) return;
+  walkMove.applyAxisAngle(upAxis, lookYaw).multiplyScalar(dt * 4.4);
+  walk.add(walkMove);
+  constrainWalk();
+}
 
 let holdCam = false;
 
@@ -456,14 +660,13 @@ function updateCamera(dt: number) {
   const view = cam;
   switch (view) {
     case 'cabin': {
-      // Centered in the seat, ahead of the headrest, aimed through the screen at the road.
-      const eye = new THREE.Vector3(0.0, 0.92, 0.12);
-      const look = new THREE.Vector3(0.0, 0.86, -2.0);
-      eye.applyMatrix4(cab.group.matrixWorld);
-      look.applyMatrix4(cab.group.matrixWorld);
-      camera.position.copy(eye);
+      // Seated between the headrests, low enough to see out the windshield.
+      // In front of the seat backs (local z ≈ 0.29) and above the dash screen.
+      cabinEye.set(0, 1.08, 0.12).applyMatrix4(cab.group.matrixWorld);
+      cabinLook.set(0, 0.82, -8).applyMatrix4(cab.group.matrixWorld);
+      camera.position.copy(cabinEye);
       camera.up.set(0, 1, 0);
-      camera.lookAt(look);
+      camera.lookAt(cabinLook);
       const yawOff = (lookYaw - cab.group.rotation.y) * 0.35;
       const pitchOff = lookPitch - 0.08;
       camera.rotateY(yawOff);
@@ -476,7 +679,7 @@ function updateCamera(dt: number) {
       else chaseOffset.set(Math.sin(orbitYaw) * 3.1 + 2.4, 2.7 + orbitPitch * 1.2, 7.5);
       chaseOffset.y = Math.max(1.7, chaseOffset.y);
       desiredCam.copy(chaseOffset).applyQuaternion(cab.group.quaternion).add(cab.group.position);
-      const snap = camera.position.distanceTo(desiredCam) > 3.2 || camera.position.distanceTo(cab.group.position) < cab.cameraClearance;
+      const snap = reduceMotion || camera.position.distanceTo(desiredCam) > 3.2 || camera.position.distanceTo(cab.group.position) < cab.cameraClearance;
       camera.position.lerp(desiredCam, snap ? 1 : 1 - Math.exp(-dt * 3.4));
       invQuat.copy(cab.group.quaternion).invert();
       localCam.copy(camera.position).sub(cab.group.position).applyQuaternion(invQuat);
@@ -490,13 +693,8 @@ function updateCamera(dt: number) {
       break;
     }
     case 'walk': {
-      const movement = new THREE.Vector3(Number(keys.has('d')) - Number(keys.has('a')), 0, Number(keys.has('s')) - Number(keys.has('w')));
-      if (movement.lengthSq() > 0) {
-        movement.applyAxisAngle(new THREE.Vector3(0, 1, 0), lookYaw).multiplyScalar(dt * 4.4);
-        walk.add(movement);
-        walk.y = ROAD_Y + 1.62;
-      }
-      camera.position.lerp(walk, 1 - Math.exp(-dt * 6));
+      applyWalk(dt);
+      camera.position.lerp(walk, reduceMotion ? 1 : 1 - Math.exp(-dt * 6));
       camera.rotation.order = 'YXZ';
       camera.rotation.set(lookPitch, lookYaw, 0);
       break;
@@ -518,7 +716,7 @@ function placeCab(d: number, curb = 0) {
 function update(dt: number) {
   elapsed += dt;
   world.update(dt);
-  const walking = keys.has('w') || keys.has('a') || keys.has('s') || keys.has('d');
+  const walking = keys.has('w') || keys.has('a') || keys.has('s') || keys.has('d') || stickX * stickX + stickY * stickY > 0.04;
   if (walking && cam === 'chase' && phase !== 'ride' && phase !== 'boarded' && phase !== 'arrived') {
     walk.copy(camera.position);
     walk.y = ROAD_Y + 1.62;
@@ -552,12 +750,7 @@ function update(dt: number) {
     const remaining = dropoffDist - distance;
     const cruise = Math.min(13.4, 5 + elapsed * 2.6);
     let want = paused ? 0 : remaining > 20 ? cruise : Math.max(0, (remaining / 20) * cruise);
-    if (!paused && remaining > 18 && traffic.stop && blockedFor < 5) {
-      const vStop = Math.sqrt(Math.max(0, 2 * 3.4 * Math.max(0, traffic.stopDist - 3.5)));
-      want = Math.min(want, vStop);
-      if (want < 0.45) blockedFor += dt;
-    } else if (!traffic.stop) blockedFor = Math.max(0, blockedFor - dt);
-    if (!paused && blockedFor >= 5 && remaining > 18) want = Math.max(want, 3.4);
+    if (!paused && remaining > 18) want = blockedSpeed(want, traffic.stop, traffic.stopDist);
     const rate = want + 0.15 >= speedMps ? 2.6 : 7;
     speedMps += THREE.MathUtils.clamp(want - speedMps, -rate * dt, rate * dt);
     if (want < 0.08 && speedMps < 0.16) speedMps = 0;
@@ -580,12 +773,13 @@ function update(dt: number) {
     speedMps = 0;
   }
   const wantDoor = (phase === 'pickup' && elapsed > 0.35) || (phase === 'boarded' && !belted) || ((phase === 'arrived' || phase === 'exited') && doorRequested) ? 1 : 0;
-  door = THREE.MathUtils.damp(door, wantDoor, 3.2, dt);
+  door = reduceMotion ? wantDoor : THREE.MathUtils.damp(door, wantDoor, 3.2, dt);
   cab.setDoor(door, 1);
+  cab.setCabinView(cam === 'cabin');
   cab.update(dt, speedMps, camera.position.distanceTo(cab.group.position));
   cab.group.updateMatrixWorld();
   updateCamera(dt);
-  sun.position.copy(cab.group.position).add(sunPosition.clone().normalize().multiplyScalar(280));
+  sun.position.copy(cab.group.position).add(sunOffset);
   sun.target.position.copy(cab.group.position);
   const span = Math.max(1, dropoffDist - pickupDist);
   document.querySelector<HTMLElement>('#progress-fill')!.style.width = `${THREE.MathUtils.clamp((distance - pickupDist) / span, 0, 1) * 100}%`;
@@ -593,22 +787,76 @@ function update(dt: number) {
   document.querySelector('#gear')!.textContent = phase === 'ride' && !paused && speedMps > 0.2 ? 'D' : 'P';
 }
 
-let uiTimer = 0;
+let readoutTimer = 0;
+let saveTimer = 0;
 let frame = 0;
+const frameTimes: number[] = [];
+function noteFrame(dt: number) {
+  if (softwareGl || qualityAdapted || quality === 'performance' || document.hidden) return;
+  frameTimes.push(dt);
+  if (frameTimes.length < 45) return;
+  const avg = frameTimes.reduce((sum, sample) => sum + sample, 0) / frameTimes.length;
+  frameTimes.length = 0;
+  if (avg <= 0.034) return;
+  const order: Quality[] = ['ultra', 'cinematic', 'balanced', 'performance'];
+  const index = order.indexOf(quality);
+  const next = order[Math.min(order.length - 1, index + 1)];
+  if (next === quality) return;
+  qualityAdapted = true;
+  applyQuality(next, false);
+  toast('Graphics eased down to hold the frame rate.');
+}
 function animate(now: number) {
+  requestAnimationFrame(animate);
+  if (document.hidden || window.__cybercabPause) { last = now; return; }
   const dt = Math.min((now - last) / 1000, 0.25);
   last = now;
   update(dt);
-  uiTimer += dt;
-  if (phase === 'ride' && uiTimer > 2) { renderUI(); uiTimer = 0; }
+  noteFrame(dt);
+  readoutTimer += dt;
+  saveTimer += dt;
+  if (readoutTimer > 0.25) {
+    readoutTimer = 0;
+    updateMapDots();
+    updateRideReadout();
+  }
+  if (saveTimer > 2) {
+    saveTimer = 0;
+    saveRide();
+  }
   frame += 1;
   renderer.shadowMap.needsUpdate = frame % 2 === 0;
   composer.render();
-  requestAnimationFrame(animate);
 }
 camera.position.copy(walk);
 camera.rotation.order = 'YXZ';
 camera.rotation.set(lookPitch, lookYaw, 0);
+
+function restoreRide() {
+  const saved = parseSnapshot(readRide());
+  if (!saved) return;
+  phase = saved.phase;
+  distance = THREE.MathUtils.clamp(saved.distance, 0.4, routeLength - 0.4);
+  belted = saved.belted;
+  paused = saved.paused;
+  temperature = saved.temperature;
+  muted = saved.muted;
+  destinationId = saved.destinationId;
+  phoneVisible = saved.phase === 'arrived' || saved.phase === 'exited' ? true : saved.phoneVisible;
+  elapsed = 0;
+  speedMps = 0;
+  if (saved.phase === 'pickup' || saved.phase === 'boarded') distance = pickupDist;
+  if (saved.phase === 'arrived' || saved.phase === 'exited') distance = dropoffDist;
+  if (saved.phase === 'boarded') cam = 'cabin';
+  else if (saved.phase === 'exited') {
+    cam = 'walk';
+    doorRequested = true;
+    walk = sample(dropoffDist).position.clone().add(curbShift(dropoffDist, CURB_PULL + 2.4));
+    walk.y = ROAD_Y + 1.62;
+  } else cam = 'chase';
+  const atCurb = saved.phase === 'pickup' || saved.phase === 'boarded' || saved.phase === 'arrived' || saved.phase === 'exited';
+  placeCab(distance, atCurb ? CURB_PULL : 0);
+}
 
 function mountCab(loaded: Cybercab) {
   cab = loaded;
@@ -616,20 +864,30 @@ function mountCab(loaded: Cybercab) {
   cab.group.position.copy(sample(stageDist).position);
   cab.group.position.y = ROAD_Y;
   cab.group.rotation.y = sample(stageDist).heading;
+  restoreRide();
   uiReady = true;
   renderUI();
   requestAnimationFrame(animate);
   Object.assign(window, {
-    render_game_to_text: () => JSON.stringify({
+    render_game_to_text: () => {
+      const doorBox = cab.doorMetrics();
+      invQuat.copy(cab.group.quaternion).invert();
+      localCam.copy(camera.position).sub(cab.group.position).applyQuaternion(invQuat);
+      return JSON.stringify({
       phase, belted, distance, totalDistance: dropoffDist - pickupDist, paused, temperature, door,
-      megalamp: MEGALAMP.name, plate: VEHICLE_PLATE, camera: cam,
+      megalamp: MEGALAMP.name, plate: VEHICLE_PLATE, camera: cam, phoneVisible, destinationId,
       geofence: pointInRing(PICKUP.lon, PICKUP.lat, AUSTIN_ROBOTAXI_GEOFENCE),
       position: camera.position.toArray(),
       coordinates: 'meters; origin -97.745,30.264; X east, Y up, Z south',
       vehicle: cab.group.position.toArray(),
       cameraGap: Number(camera.position.distanceTo(cab.group.position).toFixed(2)),
+      cameraLocal: localCam.toArray().map((n) => Number(n.toFixed(3))),
+      doorLift: Number(doorBox.lift.toFixed(3)),
+      doorTop: Number(doorBox.top.toFixed(3)),
+      doorSpan: Number(doorBox.span.toFixed(3)),
       speedMph: Math.round(speedMps * 2.23694),
-    }),
+    });
+    },
     advanceTime: (ms: number) => {
       for (let t = 0; t < ms; t += 16.667) update(Math.min(16.667, ms - t) / 1000);
       renderUI();
@@ -645,16 +903,64 @@ function mountCab(loaded: Cybercab) {
   });
 }
 
+const stickEl = document.getElementById('stick');
+const nub = document.getElementById('nub');
+let stickPointer = -1;
+function setStick(clientX: number, clientY: number) {
+  if (!stickEl) return;
+  const rect = stickEl.getBoundingClientRect();
+  let dx = (clientX - (rect.left + rect.width / 2)) / (rect.width * 0.35);
+  let dy = (clientY - (rect.top + rect.height / 2)) / (rect.height * 0.35);
+  const len = Math.hypot(dx, dy);
+  if (len > 1) { dx /= len; dy /= len; }
+  stickX = dx;
+  stickY = dy;
+  if (nub) nub.style.transform = `translate(${dx * 28}px, ${dy * 28}px)`;
+}
+function clearStick() {
+  stickPointer = -1;
+  stickX = 0;
+  stickY = 0;
+  if (nub) nub.style.transform = '';
+}
+stickEl?.addEventListener('pointerdown', (event) => {
+  stickPointer = event.pointerId;
+  stickEl.setPointerCapture(event.pointerId);
+  setStick(event.clientX, event.clientY);
+  event.preventDefault();
+});
+stickEl?.addEventListener('pointermove', (event) => {
+  if (event.pointerId !== stickPointer) return;
+  setStick(event.clientX, event.clientY);
+});
+const endStick = (event: PointerEvent) => {
+  if (event.pointerId !== stickPointer) return;
+  clearStick();
+};
+stickEl?.addEventListener('pointerup', endStick);
+stickEl?.addEventListener('pointercancel', endStick);
+
 void Promise.all([
   loadCybercab(),
   new HDRLoader().loadAsync(`${import.meta.env.BASE_URL}textures/evening_road_01_puresky_1k.hdr`).then((hdri) => {
     hdri.mapping = THREE.EquirectangularReflectionMapping;
     const env = pmrem.fromEquirectangular(hdri).texture;
     hdri.dispose();
+    const previous = scene.environment;
     scene.environment = env;
-  }),
-]).then(([loaded]) => mountCab(loaded)).catch((error) => {
+    if (previous && previous !== env) previous.dispose();
+    pmrem.dispose();
+  }).catch(() => undefined),
+  world.ready,
+]).then(([loaded]) => {
+  setBoot('Placing the Cybercab', 92);
+  mountCab(loaded);
+  composer.render();
+  hideBoot();
+}).catch((error) => {
   console.error(error);
+  setBoot('The Cybercab model did not load.', 100);
+  document.getElementById('boot-retry')?.removeAttribute('hidden');
   toast('The Cybercab model did not load.');
 });
 
