@@ -2,7 +2,11 @@
 """Build an original Cybercab glTF from an analytic subdivision cage.
 
 Run:
-  blender --background --python tools/cybercab/build.py -- [--cycles] [--no-render]
+  blender --background --python tools/cybercab/build.py -- [--beauty] [--no-render]
+
+`--beauty` renders with Cycles. The flag is not named `--cycles` because Blender
+treats that prefix as its own Cycles device arguments and then refuses to register
+the Cycles engine.
 
 Nose is +Y, up is +Z, right is +X. The glTF exporter maps that to
 Three.js Y-up with the nose on -Z. Proportions are in REFERENCE.md.
@@ -30,7 +34,7 @@ TAIL_Y = -2.20
 HALF_W = 0.867
 WHEEL_R = 0.33
 ARCH_R = 0.338
-TRACK = 0.78
+TRACK = 0.80
 FRONT_AXLE_Y = 1.48
 REAR_AXLE_Y = FRONT_AXLE_Y - 2.86
 WHEEL_Z = WHEEL_R
@@ -50,10 +54,11 @@ ROOF_PTS = [
     (0.28, 1.34),
     (-0.15, 1.40),
     (-0.55, 1.408),
-    (-1.05, 1.30),
-    (-1.50, 1.16),
-    (-1.90, 1.06),
-    (-2.18, 1.00),
+    (-1.15, 1.34),
+    (-1.60, 1.24),
+    (-1.95, 1.14),
+    (-2.12, 1.06),
+    (-2.18, 1.02),
 ]
 BELLY_PTS = [
     (2.22, 0.26),
@@ -79,21 +84,23 @@ WIDTH_PTS = [
     (2.22, 0.46),
     (1.98, 0.74),
     (1.70, HALF_W),
-    (-1.72, HALF_W),
-    (-1.96, 0.80),
-    (-2.18, 0.74),
+    (-1.55, HALF_W),
+    (-1.90, 0.76),
+    (-2.08, 0.60),
+    (-2.18, 0.46),
 ]
 
 # Side window, nose is +Y. A raked trapezoid: A-pillar, header, C-pillar, sill.
 WINDOW_POLY = [
-    (0.70, 0.96),
-    (0.46, 1.14),
-    (0.08, 1.26),
-    (-0.30, 1.24),
-    (-0.58, 1.10),
-    (-0.66, 0.90),
-    (-0.08, 0.82),
-    (0.46, 0.84),
+    (0.78, 0.90),
+    (0.55, 1.14),
+    (0.18, 1.28),
+    (-0.18, 1.30),
+    (-0.50, 1.20),
+    (-0.64, 1.00),
+    (-0.70, 0.80),
+    (-0.12, 0.74),
+    (0.46, 0.76),
 ]
 WIND_POLY = [
     (1.38, 0.78),
@@ -115,7 +122,7 @@ def argv_after_double_dash():
 
 ARGS = argv_after_double_dash()
 DO_RENDER = '--no-render' not in ARGS
-ENGINE = 'CYCLES' if '--cycles' in ARGS else 'BLENDER_WORKBENCH'
+ENGINE = 'CYCLES' if '--beauty' in ARGS else 'BLENDER_WORKBENCH'
 
 
 def smoothstep(edge0, edge1, x):
@@ -280,8 +287,8 @@ def half_profile(y):
             x = hw * math.cos(min(1.0, s) * math.pi * 0.5)
             z = lerp(rocker, belly, min(1.0, s))
         pts.append((max(0.0, x), z))
-    # Round the lamp face. Keep the tail broad: a strong ellipse blend turns the kamm into a pod.
-    nose = max(smoothstep(1.62, 2.18, y), 0.16 * smoothstep(-1.70, -2.16, y))
+    # Round the lamp face, and round the last of the tail so the kamm corners wrap.
+    nose = max(smoothstep(1.62, 2.18, y), 0.62 * smoothstep(-1.62, -2.12, y))
     if nose > 0.01:
         mid = (roof + belly) * 0.5
         rad_z = (roof - belly) * 0.5
@@ -328,24 +335,30 @@ def _catmull(points, samples):
 
 
 def make_door_poly():
-    """Shut outline. Pillars are broken into short chords; the roof stays sparse.
+    """Shut outline. Pillars stay short chords. The roof rail follows the crown.
 
-    A fully sampled curve here used to bisect the roof into spikes.
+    A fully sampled closed curve used to bisect the roof into spikes, so only
+    the header is stepped, and the knife band stays narrow.
     """
-    return [
+    front = [
         (0.98, 0.34),
         (0.95, 0.56),
         (0.88, 0.82),
         (0.74, 1.06),
         (0.58, 1.20),
-        (0.22, roof_at(0.22) + 0.012),
-        (-0.16, roof_at(-0.16) + 0.012),
-        (-0.50, roof_at(-0.50) + 0.012),
+    ]
+    roof = []
+    y = 0.46
+    while y > -0.58:
+        roof.append((round(y, 3), roof_at(y) + 0.012))
+        y -= 0.12
+    rear = [
         (-0.68, 1.16),
         (-0.78, 0.90),
         (-0.86, 0.58),
         (-0.90, 0.34),
     ]
+    return front + roof + rear
 
 
 def stations():
@@ -614,30 +627,50 @@ def inset_boundary(obj, amount, keep_x=None):
     _bm_to(obj, bm)
 
 
-def fair_boundaries(obj, cycles=4, skip_hinge=False):
+def fair_boundaries(obj, cycles=4, skip_hinge=False, band=0):
     """Taubin smooth on boundary loops so a boolean or bisect edge is not a stair.
 
-    Positive then negative steps keep the opening from collapsing.
+    Positive then negative steps keep the opening from collapsing. `band` also
+    relaxes the ring of verts just inside the edge, which is what makes the
+    silhouette stair.
     """
     bm = _bm_from(obj)
     for _ in range(cycles):
         for factor in (0.5, -0.52):
             boundary = {vert for vert in bm.verts if vert.is_boundary}
+            band_verts = set(boundary)
+            frontier = set(boundary)
+            for _ring in range(band):
+                nxt = set()
+                for vert in frontier:
+                    for edge in vert.link_edges:
+                        other = edge.other_vert(vert)
+                        if other not in band_verts:
+                            nxt.add(other)
+                band_verts |= nxt
+                frontier = nxt
             moves = {}
-            for vert in boundary:
+            for vert in band_verts:
                 if skip_hinge and abs(abs(vert.co.x) - HINGE_X) < 0.03 and vert.co.z > 0.85:
                     continue
-                nbrs = [edge.other_vert(vert) for edge in vert.link_edges if edge.other_vert(vert) in boundary]
-                if len(nbrs) != 2:
-                    continue
-                mid = (nbrs[0].co + nbrs[1].co) * 0.5
-                moves[vert] = vert.co.lerp(mid, factor)
+                if vert in boundary:
+                    nbrs = [edge.other_vert(vert) for edge in vert.link_edges if edge.other_vert(vert) in boundary]
+                    if len(nbrs) != 2:
+                        continue
+                    mid = (nbrs[0].co + nbrs[1].co) * 0.5
+                    moves[vert] = vert.co.lerp(mid, factor)
+                else:
+                    nbrs = [edge.other_vert(vert).co for edge in vert.link_edges]
+                    if len(nbrs) < 2:
+                        continue
+                    mid = sum(nbrs, Vector()) / len(nbrs)
+                    moves[vert] = vert.co.lerp(mid, factor * 0.4)
             for vert, co in moves.items():
                 vert.co = co
     _bm_to(obj, bm)
 
 
-def kamm_tail(obj, plane_y=-2.14, blend=0.18):
+def kamm_tail(obj, plane_y=-2.06, blend=0.38):
     """Pull the last stretch of the fastback into a short, nearly vertical face."""
     bm = _bm_from(obj)
     moved = 0
@@ -649,7 +682,7 @@ def kamm_tail(obj, plane_y=-2.14, blend=0.18):
         dist = vert.co.y - plane_y
         if dist < blend:
             t = 1.0 - dist / blend
-            vert.co.y -= dist * 0.72 * t * t
+            vert.co.y -= dist * 0.92 * t * t
             moved += 1
     bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.003)
     print('kamm verts', moved)
@@ -1018,7 +1051,10 @@ def key_open(spin, angle):
     curve.keyframe_points.insert(1.0, 0.0)
     curve.keyframe_points.insert(24.0, angle)
     for point in curve.keyframe_points:
-        point.interpolation = 'LINEAR'
+        point.interpolation = 'BEZIER'
+        point.easing = 'EASE_IN_OUT'
+        point.handle_left_type = 'AUTO_CLAMPED'
+        point.handle_right_type = 'AUTO_CLAMPED'
 
 
 def assign(obj, mat, slot=0):
@@ -1118,6 +1154,77 @@ def world_verts(obj):
     return [obj.matrix_world @ vert.co for vert in obj.data.vertices]
 
 
+def _revolve(name, profile, segments=64):
+    """Revolve a (radius, axial) profile around X. Axial + is the right side of the car."""
+    bm = bmesh.new()
+    rings = []
+    count = len(profile)
+    for i in range(segments):
+        ang = math.tau * i / segments
+        c, s = math.cos(ang), math.sin(ang)
+        rings.append([bm.verts.new((axial, radius * c, radius * s)) for radius, axial in profile])
+    for i in range(segments):
+        j = (i + 1) % segments
+        for k in range(count - 1):
+            try:
+                face = bm.faces.new((rings[i][k], rings[j][k], rings[j][k + 1], rings[i][k + 1]))
+                face.smooth = True
+            except ValueError:
+                pass
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    for face in bm.faces:
+        center = face.calc_center_median()
+        radial = Vector((0.0, center.y, center.z))
+        if radial.length > 0.22 and face.normal.dot(radial) < 0.0:
+            bmesh.ops.reverse_faces(bm, faces=list(bm.faces))
+            break
+    mesh = bpy.data.meshes.new(name)
+    bm.to_mesh(mesh)
+    bm.free()
+    obj = bpy.data.objects.new(name, mesh)
+    bpy.context.scene.collection.objects.link(obj)
+    for poly in mesh.polygons:
+        poly.use_smooth = True
+    return obj
+
+
+def _tire_profile(side):
+    """Cross-section with two tread grooves and a rounded sidewall. +axial is outboard."""
+    raw = [
+        (0.198, -0.072),
+        (0.228, -0.058),
+        (0.268, -0.040),
+        (0.302, -0.024),
+        (0.326, -0.014),
+        (0.334, -0.008),
+        (0.318, -0.004),
+        (0.334, 0.000),
+        (0.318, 0.004),
+        (0.334, 0.008),
+        (0.326, 0.016),
+        (0.304, 0.030),
+        (0.268, 0.046),
+        (0.232, 0.058),
+        (0.208, 0.066),
+    ]
+    return [(radius, side * axial) for radius, axial in raw]
+
+
+def _disc(name, radius, depth, axial, vertices, mat, spin):
+    bpy.ops.mesh.primitive_cylinder_add(
+        radius=radius, depth=depth, vertices=vertices,
+        location=(axial, 0.0, 0.0), rotation=(0.0, math.radians(90), 0.0),
+    )
+    obj = bpy.context.active_object
+    obj.name = name
+    bpy.ops.object.transform_apply(rotation=True)
+    for poly in obj.data.polygons:
+        poly.use_smooth = True
+    assign(obj, mat)
+    parent_at(obj, spin)
+    return obj
+
+
 def add_wheel(side, axle_y, parts, parent_root):
     loc = Vector((side * TRACK, axle_y, WHEEL_Z))
     if axle_y > 0:
@@ -1129,71 +1236,48 @@ def add_wheel(side, axle_y, parts, parent_root):
     else:
         which = 'rr' if side > 0 else 'rl'
         spin = empty(f'wheel-spin-{which}', loc, parent_root)
-    outside = side * 0.055
 
-    bpy.ops.mesh.primitive_torus_add(
-        major_radius=WHEEL_R - 0.055, minor_radius=0.055,
-        major_segments=48, minor_segments=12, location=(0.0, 0.0, 0.0),
-    )
-    tire = bpy.context.active_object
-    tire.name = f'tire-{which}'
-    tire.rotation_euler = (0.0, math.radians(90), 0.0)
-    bpy.ops.object.transform_apply(rotation=True)
+    tire = _revolve(f'tire-{which}', _tire_profile(side), segments=56)
     assign(tire, parts['rubber'])
     parent_at(tire, spin)
+
+    # Outboard sidewall shoulder, so the rubber ring is visible around the cover.
     bpy.ops.mesh.primitive_torus_add(
-        major_radius=WHEEL_R - 0.09, minor_radius=0.010, major_segments=40, minor_segments=8,
-        location=(side * 0.028, 0.0, 0.0), rotation=(0.0, math.radians(90), 0.0),
+        major_radius=0.292, minor_radius=0.012, major_segments=48, minor_segments=8,
+        location=(side * 0.046, 0.0, 0.0), rotation=(0.0, math.radians(90), 0.0),
     )
-    sidewall = bpy.context.active_object
-    sidewall.name = f'sidewall-{which}'
+    shoulder = bpy.context.active_object
+    shoulder.name = f'sidewall-{which}'
     bpy.ops.object.transform_apply(rotation=True)
-    assign(sidewall, parts['rubber'])
-    parent_at(sidewall, spin)
+    assign(shoulder, parts['rubber'])
+    parent_at(shoulder, spin)
 
-    bpy.ops.mesh.primitive_cylinder_add(
-        radius=0.308, depth=0.016, vertices=64,
-        location=(outside, 0.0, 0.0), rotation=(0.0, math.radians(90), 0.0),
-    )
-    cover = bpy.context.active_object
-    cover.name = f'aero-{which}'
-    bpy.ops.object.transform_apply(rotation=True)
-    assign(cover, parts['aero'])
-    parent_at(cover, spin)
+    face = side * 0.058
+    _disc(f'aero-{which}', 0.300, 0.010, face, 72, parts['aero'], spin)
+    # Recessed satin dish, then a slightly proud inner turbine plate.
+    _disc(f'aero-dish-{which}', 0.228, 0.006, face - side * 0.004, 56, parts['aero_dark'], spin)
+    _disc(f'aero-turbine-{which}', 0.168, 0.008, face + side * 0.003, 48, parts['aero_dark'], spin)
 
-    for radius in (0.22, 0.12, 0.045):
-        bpy.ops.mesh.primitive_torus_add(
-            major_radius=radius, minor_radius=0.0035, major_segments=40, minor_segments=6,
-            location=(outside + side * 0.010, 0.0, 0.0), rotation=(0.0, math.radians(90), 0.0),
-        )
-        groove = bpy.context.active_object
-        groove.name = f'groove-{which}'
-        bpy.ops.object.transform_apply(rotation=True)
-        assign(groove, parts['groove'])
-        parent_at(groove, spin)
+    for i in range(8):
+        ang = i * math.tau / 8 + 0.28
+        bpy.ops.mesh.primitive_cube_add(size=1.0, location=(
+            face + side * 0.008,
+            0.112 * math.cos(ang),
+            0.112 * math.sin(ang),
+        ))
+        blade = bpy.context.active_object
+        blade.name = f'blade-{which}-{i}'
+        blade.scale = (0.005, 0.016, 0.078)
+        blade.rotation_euler = (ang + 0.62, 0.0, 0.0)
+        bpy.ops.object.transform_apply(scale=True, rotation=True)
+        assign(blade, parts['aero_dark'])
+        parent_at(blade, spin)
 
-    bpy.ops.mesh.primitive_cylinder_add(
-        radius=0.028, depth=0.012, vertices=16,
-        location=(outside + side * 0.014, 0.0, 0.0), rotation=(0.0, math.radians(90), 0.0),
-    )
-    cap = bpy.context.active_object
-    cap.name = f'cap-{which}'
-    bpy.ops.object.transform_apply(rotation=True)
-    assign(cap, parts['trim'])
-    parent_at(cap, spin)
+    _disc(f'cap-{which}', 0.036, 0.008, face + side * 0.010, 20, parts['trim'], spin)
 
-    bpy.ops.mesh.primitive_cylinder_add(
-        radius=0.15, depth=0.014, vertices=24,
-        location=(-side * 0.02, 0.0, 0.0), rotation=(0.0, math.radians(90), 0.0),
-    )
-    disc = bpy.context.active_object
-    disc.name = f'disc-{which}'
-    bpy.ops.object.transform_apply(rotation=True)
-    assign(disc, parts['disc'])
-    parent_at(disc, spin)
-
+    _disc(f'disc-{which}', 0.15, 0.012, -side * 0.018, 24, parts['disc'], spin)
     caliper = box(
-        f'caliper-{which}', (-side * 0.02, 0.0, 0.10),
+        f'caliper-{which}', (-side * 0.018, 0.0, 0.10),
         (0.04, 0.07, 0.08), parts['caliper'], bevel=0.004,
     )
     parent_at(caliper, spin)
@@ -1242,21 +1326,27 @@ def _drape_rows(name, samples, mat, parent, offset):
 
 
 def add_chin(body, mat, parent):
-    """Smooth black nose valance. Face painting followed the quads and looked torn."""
+    """Black nose valance. The lower edge rises toward the corners (the bumper smile) and wraps the fenders."""
     verts = world_verts(body)
     rows = []
-    for z in (0.17, 0.23, 0.30):
+    for row_i, z_mid in enumerate((0.15, 0.23, 0.32, 0.40)):
         row = []
-        for i in range(23):
-            x = -0.74 + 1.48 * i / 22
-            y = surface_extreme(verts, x, z, True, 0.14, 0.07)
+        lift = 0.11 if row_i == 0 else 0.045
+        for i in range(31):
+            x = -0.84 + 1.68 * i / 30
+            ax = abs(x) / 0.84
+            z = z_mid + lift * ax ** 1.55
+            y = surface_extreme(verts, x, z, True, 0.16, 0.09)
+            if y is None:
+                y = surface_extreme(verts, x * 0.9, z, True, 0.22, 0.14)
             if y is None:
                 continue
+            y -= 0.05 * ax ** 2
             row.append(Vector((x, y, z)))
-        if len(row) > 4:
+        if len(row) > 5:
             rows.append(row)
     if len(rows) >= 2:
-        _drape_rows('chin', rows, mat, parent, Vector((0.0, 0.006, 0.0)))
+        _drape_rows('chin', rows, mat, parent, Vector((0.0, 0.008, -0.002)))
 
 
 def add_rear_bumper(body, mat, parent):
@@ -1278,28 +1368,35 @@ def add_rear_bumper(body, mat, parent):
 
 
 def _wrapped_bar(verts, z, across, wrap):
-    """Full-width lamp that turns the corner instead of stopping square."""
+    """Full-width lamp that turns the corner and runs onto both quarters."""
     points = []
-    for i in range(5):
-        t = i / 4
-        x = -across - 0.06 * (1.0 - t)
-        y = surface_extreme(verts, x, z, False, 0.16, 0.12)
+
+    def z_at(ax):
+        return z - 0.015 * (ax / max(across, 0.01)) ** 2
+
+    for i in range(8):
+        t = i / 7
+        x = -across - 0.18 * (1.0 - t)
+        zz = z_at(abs(x))
+        y = surface_extreme(verts, x, zz, False, 0.18, 0.14)
         if y is None:
             continue
-        points.append(Vector((x, y + wrap * (1.0 - t) - 0.004, z)))
-    for i in range(25):
-        x = -across + 2 * across * i / 24
-        y = surface_extreme(verts, x, z, False, 0.12, 0.10)
+        points.append(Vector((x, y + wrap * (1.0 - t) - 0.002, zz)))
+    for i in range(29):
+        x = -across + 2 * across * i / 28
+        zz = z_at(abs(x))
+        y = surface_extreme(verts, x, zz, False, 0.14, 0.12)
         if y is None:
             continue
-        points.append(Vector((x, y - 0.006, z)))
-    for i in range(5):
-        t = i / 4
-        x = across + 0.06 * t
-        y = surface_extreme(verts, x, z, False, 0.16, 0.12)
+        points.append(Vector((x, y - 0.008, zz)))
+    for i in range(8):
+        t = i / 7
+        x = across + 0.18 * t
+        zz = z_at(abs(x))
+        y = surface_extreme(verts, x, zz, False, 0.18, 0.14)
         if y is None:
             continue
-        points.append(Vector((x, y + wrap * t - 0.004, z)))
+        points.append(Vector((x, y + wrap * t - 0.002, zz)))
     return points
 
 
@@ -1318,8 +1415,8 @@ def add_lights(body, parts, root):
         y -= 0.05 * (abs(x) / 0.86) ** 2
         front.append(Vector((x, y + 0.007, z)))
     if len(front) > 4:
-        recess = ribbon('megalamp-recess', [Vector((p.x, p.y - 0.006, p.z)) for p in front], 0.022, parts['trim'])
-        lamp = ribbon('megalamp', front, 0.011, parts['front_lamp'])
+        recess = ribbon('megalamp-recess', [Vector((p.x, p.y - 0.008, p.z)) for p in front], 0.018, parts['trim'])
+        lamp = ribbon('megalamp', front, 0.007, parts['front_lamp'])
         parent_keep(lamp, root)
         parent_keep(recess, root)
 
@@ -1327,15 +1424,15 @@ def add_lights(body, parts, root):
     tail_face = [vert for vert in verts if vert.y < tail_y + 0.08]
     z_top = max((vert.z for vert in tail_face), default=0.90)
     z_bot = min((vert.z for vert in tail_face), default=0.30)
-    bar_z = z_bot + (z_top - z_bot) * 0.74
-    rear = _wrapped_bar(verts, bar_z, 0.62, 0.14)
+    bar_z = z_bot + (z_top - z_bot) * 0.72
+    rear = _wrapped_bar(verts, bar_z, 0.68, 0.32)
     if len(rear) > 4:
         recess = ribbon('rear-lamp-recess', [Vector((p.x, p.y + 0.004, p.z)) for p in rear], 0.026, parts['trim'])
         lamp = ribbon('rear-lightbar', rear, 0.013, parts['rear_lamp'])
         parent_keep(recess, root)
         parent_keep(lamp, root)
-    low_z = z_bot + (z_top - z_bot) * 0.18
-    low = _wrapped_bar(verts, low_z, 0.52, 0.08)
+    low_z = z_bot + (z_top - z_bot) * 0.16
+    low = _wrapped_bar(verts, low_z, 0.58, 0.26)
     if len(low) > 4:
         bumper_lamp = ribbon('rear-bumper-lamp', low, 0.008, parts['rear_lamp'])
         parent_keep(bumper_lamp, root)
@@ -1441,7 +1538,10 @@ def _poly_panel(name, poly, x, mat):
     except ValueError:
         bm.free()
         raise
-    return new_mesh_object(name, bm)
+    obj = new_mesh_object(name, bm)
+    if mat is not None:
+        assign(obj, mat)
+    return obj
 
 
 def subdivide_panel(obj, cuts):
@@ -1469,7 +1569,7 @@ def window_outline(samples=4):
 
 
 def sculpt_seat(group, side, parts):
-    """One leather bucket: a crowned cushion, a curved back, and a separate headrest."""
+    """Bucket with side bolsters, horizontal stitches, and a headrest grown from the back."""
     x_center = side * 0.36
 
     def grid_mesh(name, nu, nv, point_at, outward):
@@ -1493,38 +1593,50 @@ def sculpt_seat(group, side, parts):
 
     def cushion_point(u, v):
         edge = abs(v - 0.5) * 2.0
-        y = -0.26 + u * 0.50
-        x = x_center + (v - 0.5) * 0.48
-        z = 0.40 + 0.05 * math.sin(u * math.pi) * (1.0 - 0.4 * edge) + 0.04 * edge ** 2
+        y = -0.22 + u * 0.48
+        x = x_center + (v - 0.5) * 0.46
+        bolster = 0.075 * edge ** 2
+        crown = 0.04 * math.sin(u * math.pi) * (1.0 - 0.55 * edge)
+        z = 0.40 + crown + bolster
         return (x, y, z)
 
     def back_point(u, v):
         edge = abs(v - 0.5) * 2.0
-        y = -0.20 - u * 0.18 + 0.03 * math.sin(u * math.pi) * (1.0 - edge)
-        x = x_center + (v - 0.5) * (0.46 - 0.08 * u)
-        z = 0.50 + u * 0.50 + 0.025 * edge ** 2
-        return (x, y, z)
+        if u < 0.70:
+            t = u / 0.70
+            width = 0.44 - 0.08 * t
+            y = -0.16 - 0.18 * t
+            z = 0.50 + t * 0.42
+            bolster = 0.055 * edge ** 2
+            y -= 0.025 * edge
+        else:
+            t = (u - 0.70) / 0.30
+            # Integrated headrest: narrower, rounded, overlapping the top of the back.
+            width = 0.30 - 0.06 * (t - 0.45) ** 2
+            y = -0.34 - 0.045 * t
+            z = 0.90 + t * 0.18
+            bolster = 0.03 * (1.0 - edge) + 0.012 * edge
+        x = x_center + (v - 0.5) * width
+        return (x, y, z + bolster)
 
-    thicken(grid_mesh(f'cushion-{side}', 10, 7, cushion_point, Vector((0.0, 0.0, 1.0))), 0.055)
-    thicken(grid_mesh(f'back-{side}', 8, 7, back_point, Vector((0.0, 1.0, 0.25))), 0.045)
-    for i, u in enumerate((0.28, 0.48, 0.68)):
-        y, z = -0.20 - u * 0.18, 0.50 + u * 0.50
-        box(f'stitch-{side}-{i}', (x_center, y + 0.02, z), (0.30, 0.008, 0.006), parts['stitch'], bevel=0.0, parent=group)
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=0.09, location=(x_center, -0.36, 1.00))
-    head = bpy.context.active_object
-    head.name = f'headrest-{side}'
-    head.scale = (1.15, 0.55, 0.72)
-    bpy.ops.object.transform_apply(scale=True)
-    for poly in head.data.polygons:
-        poly.use_smooth = True
-    assign(head, parts['leather'])
-    parent_keep(head, group)
-    shoulder = Vector((x_center + side * 0.06, -0.36, 0.98))
+    cushion = thicken(grid_mesh(f'cushion-{side}', 12, 9, cushion_point, Vector((0.0, 0.0, 1.0))), 0.05)
+    back = thicken(grid_mesh(f'back-{side}', 12, 9, back_point, Vector((0.0, 1.0, 0.2))), 0.042)
+    # Stitches follow the cushion bolsters and the back, instead of floating bars.
+    for v in (0.18, 0.82):
+        pts = [Vector(cushion_point(i / 7, v)) + Vector((0.0, 0.012, 0.02)) for i in range(8)]
+        for i in range(len(pts) - 1):
+            cylinder_between(f'stitch-c-{side}-{v}-{i}', pts[i], pts[i + 1], 0.0035, parts['stitch'], group)
+    for u in (0.22, 0.42, 0.60):
+        a = Vector(back_point(u, 0.16)) + Vector((0.0, 0.012, 0.0))
+        b = Vector(back_point(u, 0.84)) + Vector((0.0, 0.012, 0.0))
+        cylinder_between(f'stitch-b-{side}-{u}', a, b, 0.0032, parts['stitch'], group)
+    shoulder = Vector(back_point(0.62, 0.5)) + Vector((side * 0.02, 0.02, 0.02))
     buckle_at = Vector((side * 0.08, 0.06, 0.50))
-    lap = Vector((x_center, 0.10, 0.48))
+    lap = Vector((x_center, 0.08, 0.50))
     cylinder_between(f'belt-shoulder-{side}', shoulder, buckle_at, 0.008, parts['belt'], group)
     cylinder_between(f'belt-lap-{side}', lap, buckle_at, 0.008, parts['belt'], group)
     box(f'buckle-{side}', buckle_at, (0.045, 0.03, 0.02), parts['buckle'], bevel=0.003, parent=group)
+    return cushion, back
 
 
 def thicken(obj, thickness):
@@ -1546,27 +1658,225 @@ def plant_on_shoulder(obj, sign):
             vert.co.z = min(vert.co.z, 1.08)
 
 
+def _loop_panel(name, poly, sign, rings=6):
+    """Concentric quads of the design curve, so the rim is the curve and not the body stair."""
+    outline = _catmull(list(poly) + [poly[0]], 5)[:-1]
+    bm = bmesh.new()
+    vert_rings = []
+    for step in range(rings):
+        ring = _shrink_poly(outline, 0.008 + step * 0.022)
+        vert_rings.append([bm.verts.new((sign * 1.08, y, z)) for y, z in ring])
+    for i in range(len(vert_rings) - 1):
+        outer = vert_rings[i]
+        inner = vert_rings[i + 1]
+        count = len(outer)
+        for k in range(count):
+            j = (k + 1) % count
+            try:
+                face = bm.faces.new((outer[k], outer[j], inner[j], inner[k]))
+                face.smooth = True
+            except ValueError:
+                pass
+    center_ring = vert_rings[-1]
+    cy = sum(vert.co.y for vert in center_ring) / len(center_ring)
+    cz = sum(vert.co.z for vert in center_ring) / len(center_ring)
+    center = bm.verts.new((sign * 1.08, cy, cz))
+    for k in range(len(center_ring)):
+        j = (k + 1) % len(center_ring)
+        try:
+            face = bm.faces.new((center_ring[k], center_ring[j], center))
+            face.smooth = True
+        except ValueError:
+            pass
+    return new_mesh_object(name, bm)
+
+
+def reskin_door(skin, side, poly):
+    """Project a smooth panel onto the extracted door, then throw the stair away."""
+    sign = 1 if side > 0 else -1
+    panel = _loop_panel(skin.name + '-panel', poly, sign)
+    project_onto(panel, skin)
+    abs_x = sorted(abs(vert.co.x) for vert in panel.data.vertices)
+    median = abs_x[len(abs_x) // 2]
+    print('reskin', side, 'median |x|', round(median, 3), 'verts', len(abs_x))
+    if median < 0.25 or median > 0.98:
+        bpy.data.objects.remove(panel, do_unlink=True)
+        print('reskin skipped', side)
+        return skin
+    for vert in panel.data.vertices:
+        if abs(vert.co.x) > 0.98:
+            vert.co.x = sign * median
+    skin.data = panel.data
+    bpy.data.objects.remove(panel, do_unlink=True)
+    return skin
+
+
+def add_shut_line(body, poly, mat):
+    """Black reveal on the body, wider than the cut, so the opening reads as a smooth seam."""
+    outline = _catmull(list(poly) + [poly[0]], 6)[:-1]
+    outer = _shrink_poly(outline, -0.016)
+    inner = _shrink_poly(outline, 0.010)
+    made = []
+    for sign in (1, -1):
+        suffix = 'r' if sign > 0 else 'l'
+        bm = bmesh.new()
+        outer_verts = [bm.verts.new((sign * 1.12, y, z)) for y, z in outer]
+        inner_verts = [bm.verts.new((sign * 1.12, y, z)) for y, z in inner]
+        count = len(outer_verts)
+        for i in range(count):
+            j = (i + 1) % count
+            try:
+                face = bm.faces.new((outer_verts[i], outer_verts[j], inner_verts[j], inner_verts[i]))
+                face.smooth = True
+            except ValueError:
+                pass
+        obj = new_mesh_object(f'shut-line-{suffix}', bm)
+        assign(obj, mat)
+        subdivide_panel(obj, 1)
+        project_onto(obj, body)
+        for vert in obj.data.vertices:
+            if abs(vert.co.x) > 0.98:
+                vert.co.x = sign * 0.84
+            vert.co.x += sign * 0.004
+        made.append(obj)
+    return made
+
+
+def add_inner_card(side, door, parts):
+    """Leather inner card with an armrest swell, sitting just inside the door shell."""
+    sign = 1 if side > 0 else -1
+    suffix = 'r' if side > 0 else 'l'
+    ys = [vert.co.y for vert in door.data.vertices]
+    # Just inboard of the side skin. min/max x is the roof hinge, not the card.
+    inner_x = sign * 0.80
+    y0 = min(ys) + 0.05
+    y1 = max(ys) - 0.06
+    bm = bmesh.new()
+    nu, nv = 10, 7
+    grid = []
+    for i in range(nu):
+        row = []
+        u = i / (nu - 1)
+        y = y0 * (1.0 - u) + y1 * u
+        for j in range(nv):
+            v = j / (nv - 1)
+            z = 0.40 + v * 0.36
+            swell = 0.018 * math.exp(-((z - 0.64) ** 2) / 0.007) * math.sin(max(0.0, u) * math.pi)
+            edge = abs(v - 0.45) * 2.0
+            x = inner_x - sign * (swell + 0.005 * edge)
+            row.append(bm.verts.new((x, y, z)))
+        grid.append(row)
+    for i in range(nu - 1):
+        for j in range(nv - 1):
+            try:
+                face = bm.faces.new((grid[i][j], grid[i][j + 1], grid[i + 1][j + 1], grid[i + 1][j]))
+                face.smooth = True
+            except ValueError:
+                pass
+    obj = _mesh_from_bm(f'inner-card-{suffix}', bm, Vector((-sign, 0.0, 0.0)))
+    assign(obj, parts['leather'])
+    thicken(obj, 0.010)
+    return obj
+
+
+def _window_span(y, poly):
+    hits = []
+    for i in range(len(poly)):
+        y0, z0 = poly[i]
+        y1, z1 = poly[(i + 1) % len(poly)]
+        if abs(y1 - y0) < 1e-8:
+            continue
+        if (y0 <= y <= y1) or (y1 <= y <= y0):
+            t = (y - y0) / (y1 - y0)
+            hits.append(z0 + t * (z1 - z0))
+    if len(hits) < 2:
+        return None
+    return min(hits), max(hits)
+
+
+def drop_unwrapped(obj):
+    """Throw away shrinkwrap verts that missed the door and were clamped into a spike."""
+    bm = _bm_from(obj)
+    doomed = [
+        face for face in bm.faces
+        if any(abs(vert.co.x) < 0.55 or abs(vert.co.x) > 0.96 for vert in face.verts)
+    ]
+    if doomed:
+        bmesh.ops.delete(bm, geom=doomed, context='FACES')
+    _bm_to(obj, bm)
+    return len(doomed)
+
+
 def side_glass(side, glass_mat, door_obj):
-    """Smooth pane draped on the door, just proud of the skin."""
+    """Quad pane lofted across the window, then draped on the door.
+
+    An n-gon fan shrinkwrap read as vertical pleats.
+    """
     suffix = 'r' if side > 0 else 'l'
     sign = 1 if side > 0 else -1
-    glass = _poly_panel(
-        f'door-glass-{suffix}',
-        _shrink_poly(window_outline(), 0.012),
-        sign * 1.20,
-        glass_mat,
-    )
-    subdivide_panel(glass, 2)
+    outline = window_outline(5)
+    ys = [point[0] for point in outline]
+    y0, y1 = min(ys) + 0.018, max(ys) - 0.018
+    nu, nv = 24, 8
+    bm = bmesh.new()
+    grid = []
+    for i in range(nu):
+        y = y0 + (y1 - y0) * i / (nu - 1)
+        span = _window_span(y, outline)
+        row = []
+        if span is None:
+            grid.append(row)
+            continue
+        z_lo, z_hi = span
+        z_lo += 0.014
+        z_hi -= 0.014
+        if z_hi - z_lo < 0.03:
+            grid.append(row)
+            continue
+        for j in range(nv):
+            z = z_lo + (z_hi - z_lo) * j / (nv - 1)
+            row.append(bm.verts.new((sign * 1.05, y, z)))
+        grid.append(row)
+    for i in range(len(grid) - 1):
+        if len(grid[i]) != nv or len(grid[i + 1]) != nv:
+            continue
+        for j in range(nv - 1):
+            try:
+                face = bm.faces.new((grid[i][j], grid[i][j + 1], grid[i + 1][j + 1], grid[i + 1][j]))
+                face.smooth = True
+            except ValueError:
+                pass
+    if not bm.faces:
+        bm.free()
+        raise RuntimeError(f'side glass {suffix} loft was empty')
+    glass = new_mesh_object(f'door-glass-{suffix}', bm)
+    assign(glass, glass_mat)
     project_onto(glass, door_obj)
-    plant_on_shoulder(glass, sign)
-    missed = 0
+    missed = drop_unwrapped(glass)
     for vert in glass.data.vertices:
-        if abs(vert.co.x) > 0.95:
-            missed += 1
-            vert.co.x = sign * 0.82
-        vert.co.x += sign * 0.006
-    print('glass missed', suffix, missed)
+        vert.co.x += sign * 0.008
+    print('glass missed', suffix, missed, 'faces', len(glass.data.polygons))
+    smooth_pane(glass, cycles=3)
     return glass
+
+
+def smooth_pane(obj, cycles=4):
+    """Relax the glass so a shrinkwrapped grid does not read as pleats."""
+    bm = _bm_from(obj)
+    for _ in range(cycles):
+        boundary = {vert for vert in bm.verts if vert.is_boundary}
+        moves = {}
+        for vert in bm.verts:
+            if vert in boundary:
+                continue
+            nbrs = [edge.other_vert(vert).co for edge in vert.link_edges]
+            if len(nbrs) < 3:
+                continue
+            mid = sum(nbrs, Vector()) / len(nbrs)
+            moves[vert] = vert.co.lerp(mid, 0.45)
+        for vert, co in moves.items():
+            vert.co = co
+    _bm_to(obj, bm)
 
 
 def add_window_frame(side, door_obj, mat):
@@ -1574,7 +1884,7 @@ def add_window_frame(side, door_obj, mat):
     sign = 1 if side > 0 else -1
     suffix = 'r' if side > 0 else 'l'
     outer = window_outline(5)
-    inner = _shrink_poly(outer, 0.030)
+    inner = _shrink_poly(outer, 0.022)
     bm = bmesh.new()
     outer_verts = [bm.verts.new((sign * 1.12, y, z)) for y, z in outer]
     inner_verts = [bm.verts.new((sign * 1.12, y, z)) for y, z in inner]
@@ -1589,27 +1899,231 @@ def add_window_frame(side, door_obj, mat):
     assign(frame, mat)
     subdivide_panel(frame, 1)
     project_onto(frame, door_obj)
-    plant_on_shoulder(frame, sign)
-    missed = 0
+    missed = drop_unwrapped(frame)
     for vert in frame.data.vertices:
-        if abs(vert.co.x) > 0.95:
-            missed += 1
-            vert.co.x = sign * 0.82
-        vert.co.x += sign * 0.008
+        vert.co.x += sign * 0.012
     print('frame missed', suffix, missed)
     return frame
 
 
-def cut_window_bool(door, side):
-    """One boolean, so the opening is a smooth loop instead of a quad stair."""
+def recalc_outward(obj):
+    """Solidify and booleans leave patches of inward normals that read as dark streaks."""
+    bm = _bm_from(obj)
+    bmesh.ops.recalc_face_normals(bm, faces=bm.faces)
+    if not bm.verts:
+        _bm_to(obj, bm)
+        return
+    center = sum((vert.co for vert in bm.verts), Vector()) / len(bm.verts)
+    outward = Vector((1.0 if center.x >= 0.0 else -1.0, 0.0, 0.15))
+    score = sum((face.normal.dot(outward) for face in bm.faces), 0.0)
+    if score < 0.0:
+        bmesh.ops.reverse_faces(bm, faces=list(bm.faces))
+    for face in bm.faces:
+        face.smooth = True
+    _bm_to(obj, bm)
+
+
+def snap_opening(obj, poly):
+    """Pull a boolean lip onto the design curve so the opening is not a quad stair."""
+    bm = _bm_from(obj)
+    moved = 0
+    for vert in bm.verts:
+        if not vert.is_valid or not vert.is_boundary:
+            continue
+        if abs(abs(vert.co.x) - HINGE_X) < 0.04 and vert.co.z > 0.9:
+            continue
+        hit = nearest_on_polys(vert.co.y, vert.co.z, (poly,))
+        if hit is not None and hit[0] < 0.055:
+            vert.co.y = hit[1]
+            vert.co.z = hit[2]
+            moved += 1
+    print('opening lip snapped', moved)
+    _bm_to(obj, bm)
+
+
+def add_door_gasket(side, door, poly, mat):
+    """Narrow black reveal on the door skin, hiding the faceted shut line."""
     sign = 1 if side > 0 else -1
-    x0, x1 = (0.02, 1.35) if sign > 0 else (-1.35, -0.02)
+    suffix = 'r' if sign > 0 else 'l'
+    outline = _catmull(list(poly) + [poly[0]], 6)[:-1]
+    outer = _shrink_poly(outline, -0.006)
+    inner = _shrink_poly(outline, 0.020)
+    bm = bmesh.new()
+    outer_verts = [bm.verts.new((sign * 1.10, y, z)) for y, z in outer]
+    inner_verts = [bm.verts.new((sign * 1.10, y, z)) for y, z in inner]
+    count = len(outer_verts)
+    for i in range(count):
+        j = (i + 1) % count
+        try:
+            face = bm.faces.new((outer_verts[i], outer_verts[j], inner_verts[j], inner_verts[i]))
+            face.smooth = True
+        except ValueError:
+            pass
+    obj = new_mesh_object(f'gasket-{suffix}', bm)
+    assign(obj, mat)
+    subdivide_panel(obj, 1)
+    project_onto(obj, door)
+    for vert in obj.data.vertices:
+        if abs(vert.co.x) > 0.98:
+            vert.co.x = sign * 0.84
+        vert.co.x += sign * 0.007
+    return obj
+
+
+def _outer_keys(obj):
+    bm = _bm_from(obj)
+    keys = set()
+    for vert in bm.verts:
+        if vert.is_boundary:
+            keys.add((round(vert.co.x, 3), round(vert.co.y, 3), round(vert.co.z, 3)))
+    bm.free()
+    return keys
+
+
+def _is_outer(vert, outer):
+    key = (round(vert.co.x, 3), round(vert.co.y, 3), round(vert.co.z, 3))
+    if key in outer:
+        return True
+    for stored in outer:
+        if abs(stored[0] - vert.co.x) < 0.004 and abs(stored[1] - vert.co.y) < 0.004 and abs(stored[2] - vert.co.z) < 0.004:
+            return True
+    return False
+
+
+def fair_outer_rim(door, cycles=12, limit=0.004):
+    """Soften only the shut-line loop. The window lip stays on the design curve.
+
+    Each vert may move a few millimetres, enough to knock the stair off the
+    open-door silhouette without pulling the panel off the body.
+    """
+    window = window_outline(4)
+    bm = _bm_from(door)
+    start = {vert.index: vert.co.copy() for vert in bm.verts}
+    for _ in range(cycles):
+        for factor in (0.5, -0.52):
+            moves = {}
+            for vert in bm.verts:
+                if not vert.is_boundary:
+                    continue
+                if abs(abs(vert.co.x) - HINGE_X) < 0.03 and vert.co.z > 0.9:
+                    continue
+                near_window = nearest_on_polys(vert.co.y, vert.co.z, (window,))
+                if near_window is not None and near_window[0] < 0.022:
+                    continue
+                nbrs = []
+                for edge in vert.link_edges:
+                    other = edge.other_vert(vert)
+                    if not other.is_boundary:
+                        continue
+                    near = nearest_on_polys(other.co.y, other.co.z, (window,))
+                    if near is not None and near[0] < 0.022:
+                        continue
+                    nbrs.append(other.co)
+                if len(nbrs) != 2:
+                    continue
+                mid = (nbrs[0] + nbrs[1]) * 0.5
+                moves[vert] = vert.co.lerp(mid, factor)
+            for vert, co in moves.items():
+                origin = start[vert.index]
+                delta = co - origin
+                if delta.length > limit:
+                    co = origin + delta.normalized() * limit
+                vert.co = co
+    _bm_to(door, bm)
+
+
+def smooth_rim_x(door, passes=10):
+    """The shut line is smooth in side view and jagged edge-on. Relax only X."""
+    window = window_outline(4)
+    bm = _bm_from(door)
+    rim = []
+    for vert in bm.verts:
+        if not vert.is_boundary:
+            continue
+        if abs(abs(vert.co.x) - HINGE_X) < 0.03 and vert.co.z > 0.9:
+            continue
+        near = nearest_on_polys(vert.co.y, vert.co.z, (window,))
+        if near is not None and near[0] < 0.022:
+            continue
+        rim.append(vert)
+    member = set(rim)
+    for _ in range(passes):
+        updated = []
+        for vert in rim:
+            nbrs = [edge.other_vert(vert).co.x for edge in vert.link_edges if edge.other_vert(vert) in member]
+            if len(nbrs) < 2:
+                updated.append(vert.co.x)
+                continue
+            updated.append(sum(nbrs) / len(nbrs))
+        for vert, x in zip(rim, updated):
+            vert.co.x = vert.co.x * 0.4 + x * 0.6
+    print('rim x smoothed', len(rim))
+    _bm_to(door, bm)
+
+
+def cut_window_bool(door, side):
+    """Knife the design curve and delete the pane.
+
+    A boolean on the open door skin left a torn stair, and fairing that stair
+    could not put the lip back on the curve.
+    """
+    sign = 1 if side > 0 else -1
+    outline = window_outline(samples=6)
+    x0, x1 = (0.04, 1.20) if sign > 0 else (-1.20, -0.04)
     before = len(door.data.polygons)
-    boolean_op(door, make_prism(f'win-cut-{side}', window_outline(), x0, x1), 'DIFFERENCE')
+    outer = _outer_keys(door)
+    knife_segments(door, poly_segments(outline), x0, x1, band=0.045)
+    bm = _bm_from(door)
+    doomed = []
+    for face in bm.faces:
+        center = face.calc_center_median()
+        normal = face.normal
+        if abs(normal.x) < 0.28:
+            continue
+        if center.z > roof_at(center.y) - 0.03:
+            continue
+        if polygon_contains(center.y, center.z, outline):
+            doomed.append(face)
+    print('window faces', side, len(doomed))
+    if len(doomed) < 4:
+        _bm_to(door, bm)
+        raise RuntimeError('side window missed the door skin')
+    bmesh.ops.delete(bm, geom=doomed, context='FACES')
+    hole = [vert for vert in bm.verts if vert.is_valid and vert.is_boundary and not _is_outer(vert, outer)]
+    hole_edges = []
+    seen = set()
+    for vert in hole:
+        for edge in vert.link_edges:
+            if edge.index in seen:
+                continue
+            other = edge.other_vert(vert)
+            if other.is_boundary and not _is_outer(other, outer):
+                seen.add(edge.index)
+                hole_edges.append(edge)
+    if hole_edges:
+        bmesh.ops.subdivide_edges(bm, edges=hole_edges, cuts=2)
+    door_poly = make_door_poly()
+    snapped = 0
+    worst = 0.0
+    for vert in bm.verts:
+        if not vert.is_valid or not vert.is_boundary or _is_outer(vert, outer):
+            continue
+        on_shut = nearest_on_polys(vert.co.y, vert.co.z, (door_poly,))
+        hit = nearest_on_polys(vert.co.y, vert.co.z, (outline,))
+        if hit is None or hit[0] > 0.09:
+            continue
+        if on_shut is not None and on_shut[0] < 0.018 and hit[0] > 0.03:
+            continue
+        worst = max(worst, hit[0])
+        vert.co.y = hit[1]
+        vert.co.z = hit[2]
+        snapped += 1
+    print('window lip', side, 'snapped', snapped, 'worst', round(worst, 4))
+    _bm_to(door, bm)
     after = len(door.data.polygons)
-    print('window boolean', side, before, '->', after)
-    if after < before * 0.35 or after > before * 3:
-        raise RuntimeError(f'window boolean distorted the door ({before} -> {after})')
+    print('window cut', side, before, '->', after)
+    if snapped < 12:
+        raise RuntimeError(f'window lip did not land on the curve ({snapped} verts)')
 
 
 def add_header_bezel(windshield, mat):
@@ -1681,37 +2195,32 @@ def configure_render(engine):
     scene.render.resolution_y = 900
     scene.render.film_transparent = False
     if engine == 'CYCLES':
+        scene.render.resolution_x = 1200
+        scene.render.resolution_y = 780
         scene.cycles.samples = 64
-        scene.cycles.use_denoising = True
-        try:
-            scene.cycles.denoiser = 'OPENIMAGEDENOISE'
-        except (TypeError, AttributeError):
-            pass
+        # Ubuntu's Blender 4.0.2 build has no OpenImageDenoise. Extra samples stand in for it.
+        scene.cycles.use_denoising = False
         scene.cycles.device = 'CPU'
         scene.view_settings.view_transform = 'AgX'
-        world = bpy.data.worlds.new('studio')
+        scene.view_settings.exposure = 0.15
+        try:
+            scene.view_settings.look = 'AgX - Medium High Contrast'
+        except (TypeError, ValueError):
+            pass
+        hdri_path = os.path.join(ROOT, 'public', 'textures', 'evening_road_01_puresky_1k.hdr')
+        world = bpy.data.worlds.new('evening-road')
         scene.world = world
         world.use_nodes = True
-        bg = world.node_tree.nodes['Background']
-        bg.inputs['Color'].default_value = (0.55, 0.57, 0.6, 1)
-        bg.inputs['Strength'].default_value = 0.35
-        bpy.ops.object.light_add(type='AREA', location=(4.2, 3.5, 3.2))
-        key = bpy.context.active_object
-        key.data.energy = 1800
-        key.data.size = 2.4
-        key.data.color = (1.0, 0.93, 0.84)
-        look_at(key, Vector((0.0, 0.2, 0.6)))
-        bpy.ops.object.light_add(type='AREA', location=(-3.5, -2.5, 2.2))
-        fill = bpy.context.active_object
-        fill.data.energy = 500
-        fill.data.size = 3.0
-        fill.data.color = (0.75, 0.82, 0.9)
-        look_at(fill, Vector((0.0, 0.0, 0.6)))
-        bpy.ops.object.light_add(type='AREA', location=(0.4, -4.5, 2.4))
-        rim = bpy.context.active_object
-        rim.data.energy = 900
-        rim.data.size = 1.6
-        look_at(rim, Vector((0.0, 0.0, 0.7)))
+        nodes = world.node_tree.nodes
+        links = world.node_tree.links
+        nodes.clear()
+        output = nodes.new('ShaderNodeOutputWorld')
+        background = nodes.new('ShaderNodeBackground')
+        environment = nodes.new('ShaderNodeTexEnvironment')
+        environment.image = bpy.data.images.load(hdri_path)
+        background.inputs['Strength'].default_value = 1.15
+        links.new(environment.outputs['Color'], background.inputs['Color'])
+        links.new(background.outputs['Background'], output.inputs['Surface'])
     else:
         shading = scene.display.shading
         shading.light = 'STUDIO'
@@ -1721,10 +2230,11 @@ def configure_render(engine):
         world = bpy.data.worlds.new('gray')
         scene.world = world
         world.color = (0.62, 0.64, 0.66)
-    bpy.ops.mesh.primitive_plane_add(size=30, location=(0.0, 0.0, 0.0))
+    bpy.ops.mesh.primitive_plane_add(size=40, location=(0.0, 0.0, 0.0))
     ground = bpy.context.active_object
     ground.name = 'ground'
-    assign(ground, make_material('ground', '#8d9094', 0.0, 0.85))
+    ground_color = '#3c403c' if engine == 'CYCLES' else '#8d9094'
+    assign(ground, make_material('ground', ground_color, 0.0, 0.82))
     return ground
 
 
@@ -1764,8 +2274,11 @@ def render_views(hinges):
         spin.animation_data.action = None
         spin.rotation_euler.y = angle
     bpy.context.view_layer.update()
-    shoot('doors-open', Vector((4.2, 2.2, 1.05)), Vector((0.15, 0.1, 0.7)), lens=42)
-    shoot('interior', Vector((1.35, 0.05, 0.95)), Vector((-0.05, -0.02, 0.62)), lens=32)
+    shoot('doors-open', Vector((4.2, 2.2, 1.15)), Vector((0.15, 0.05, 0.85)), lens=38)
+    exposure = bpy.context.scene.view_settings.exposure
+    bpy.context.scene.view_settings.exposure = 0.65
+    shoot('interior', Vector((0.24, -0.02, 0.98)), Vector((0.0, 2.8, 1.12)), lens=24)
+    bpy.context.scene.view_settings.exposure = exposure
     for spin, action in stashed:
         spin.rotation_euler.y = 0.0
         spin.animation_data.action = action
@@ -1924,20 +2437,22 @@ def reset_scene():
 def main():
     reset_scene()
     parts = {
-        'gold': make_material('paint-champagne', '#C9A66B', 0.72, 0.34, coat=1.0, coat_rough=0.07),
-        'aero': make_material('paint-aero', '#C9A66B', 0.55, 0.40, coat=0.35, coat_rough=0.18),
+        'gold': make_material('paint-champagne', '#C4A15C', 0.82, 0.22, coat=1.0, coat_rough=0.055),
+        'aero': make_material('paint-aero', '#C6A56A', 0.62, 0.32, coat=0.55, coat_rough=0.08),
+        'aero_dark': make_material('aero-satin', '#3A3D42', 0.55, 0.38, coat=0.25, coat_rough=0.18),
         'trim': make_material('trim-black', '#141618', 0.08, 0.46),
-        'inner': make_material('cabin-shell', '#1A1C1E', 0.0, 0.72),
-        'rubber': make_material('rubber', '#121314', 0.0, 0.92),
-        'groove': make_material('aero-groove', '#8A7E64', 0.35, 0.48),
+        'inner': make_material('cabin-shell', '#121416', 0.0, 0.62),
+        'rubber': make_material('rubber', '#16181A', 0.0, 0.86),
+        'groove': make_material('aero-groove', '#2E3136', 0.4, 0.45),
         'disc': make_material('brake-disc', '#6E7378', 0.85, 0.35),
         'caliper': make_material('brake-caliper', '#3E3A36', 0.45, 0.42),
-        'wind': make_material('windshield', '#16303A', 0.0, 0.04, transmission=0.82, ior=1.52, double_sided=True, viewport='#102028'),
-        'glass_dark': make_material('side-glass', '#0E1A20', 0.0, 0.05, transmission=0.62, ior=1.52, double_sided=True, viewport='#0C1418'),
-        'front_lamp': make_material('lamp-front', '#F4F7FF', 0.0, 0.18, emission='#F7F9FF', emission_strength=16),
-        'rear_lamp': make_material('lamp-rear', '#FF2A22', 0.0, 0.22, emission='#FF1A12', emission_strength=12),
+        'wind': make_material('windshield', '#0E242C', 0.0, 0.03, transmission=0.72, ior=1.52, double_sided=True, viewport='#0C1C22'),
+        'glass_dark': make_material('side-glass', '#05080A', 0.0, 0.04, transmission=0.12, ior=1.52, double_sided=True, viewport='#05080A'),
+        'shade': make_material('window-shade', '#07080A', 0.0, 0.7, double_sided=True),
+        'front_lamp': make_material('lamp-front', '#FFFFFF', 0.0, 0.12, emission='#FFFFFF', emission_strength=22),
+        'rear_lamp': make_material('lamp-rear', '#FF2A22', 0.0, 0.22, emission='#FF1A12', emission_strength=14),
         'amber': make_material('lamp-amber', '#FF9A1F', 0.0, 0.3, emission='#FF8A00', emission_strength=4),
-        'leather': make_material('leather', '#2A2E33', 0.0, 0.48, sheen=0.28),
+        'leather': make_material('leather', '#1C1F24', 0.0, 0.38, coat=0.18, coat_rough=0.28, sheen=0.45),
         'stitch': make_material('stitch', '#6A6258', 0.0, 0.6),
         'carpet': make_material('carpet', '#1A1C1E', 0.0, 0.94),
         'dash': make_material('dash', '#D9D4C8', 0.02, 0.5),
@@ -1983,7 +2498,7 @@ def main():
 
     door_metal_r = extract_faces(shell, door_pred(1), 'door-r-skin')
     door_metal_l = extract_faces(shell, door_pred(-1), 'door-l-skin')
-    fair_boundaries(shell, cycles=3)
+    fair_boundaries(shell, cycles=5)
     for metal in (door_metal_r, door_metal_l):
         inset_boundary(metal, 0.003, keep_x=HINGE_X)
         fair_boundaries(metal, cycles=3, skip_hinge=True)
@@ -1995,6 +2510,7 @@ def main():
     body.name = 'body'
     assign(body, parts['gold'], 0)
     solidify(body, 0.010, parts['inner'], parts['trim'])
+    recalc_outward(body)
     paint_cladding(body, parts['trim'])
     assign(windshield, parts['wind'], 0)
     header_bezel = add_header_bezel(windshield, parts['trim'])
@@ -2006,37 +2522,39 @@ def main():
     ):
         assign(metal, parts['gold'], 0)
         glass = side_glass(side, parts['glass_dark'], metal)
-        frame = add_window_frame(side, metal, parts['trim'])
+        shade = glass.copy()
+        shade.data = glass.data.copy()
+        suffix_early = 'r' if side > 0 else 'l'
+        shade.name = f'shade-{suffix_early}'
+        bpy.context.scene.collection.objects.link(shade)
+        for vert in shade.data.vertices:
+            vert.co.x -= side * 0.015
+        assign(shade, parts['shade'])
         cut_window_bool(metal, side)
-        fair_boundaries(metal, cycles=5, skip_hinge=True)
-        solidify(metal, 0.008, parts['inner'], parts['trim'])
+        fair_outer_rim(metal)
+        smooth_rim_x(metal)
+        solidify(metal, 0.022, parts['inner'], parts['trim'])
+        recalc_outward(metal)
         suffix = 'r' if side > 0 else 'l'
+        card = add_inner_card(side, metal, parts)
         world_pts = [metal.matrix_world @ vert.co for vert in metal.data.vertices]
-        xs = [point.x for point in world_pts]
         ys = [point.y for point in world_pts]
-        inner_x = (min(xs) + 0.045) if side > 0 else (max(xs) - 0.045)
+        inner_x = side * 0.78
         mid_y = sum(ys) / len(ys)
         orient, spin = hinge_for(metal, f'door-hinge-{suffix}')
         parent_keep(metal, spin)
         parent_keep(glass, spin)
-        parent_keep(frame, spin)
-        metal.name = f'door-{suffix}'
-        arm = box(
-            f'armrest-{suffix}',
-            (inner_x, mid_y - 0.02, 0.62),
-            (0.045, 0.36, 0.04),
-            parts['trim'],
-            bevel=0.008,
-        )
-        parent_keep(arm, spin)
-        card = box(
-            f'door-card-{suffix}',
-            (inner_x, mid_y - 0.04, 0.52),
-            (0.03, 0.62, 0.28),
-            parts['inner'],
-            bevel=0.01,
-        )
+        parent_keep(shade, spin)
         parent_keep(card, spin)
+        metal.name = f'door-{suffix}'
+        pull = box(
+            f'pull-{suffix}',
+            (inner_x, mid_y + 0.02, 0.72),
+            (0.012, 0.18, 0.016),
+            parts['trim'],
+            bevel=0.003,
+        )
+        parent_keep(pull, spin)
         angle = DOOR_OPEN if side > 0 else -DOOR_OPEN
         key_open(spin, angle)
         hinges.append((spin, angle))
