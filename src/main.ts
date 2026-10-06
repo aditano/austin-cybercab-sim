@@ -131,7 +131,7 @@ if (ssaoPass) {
   composer.addPass(ssaoPass);
 }
 if (ssaoPass) ssaoPass.enabled = false;
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), softwareGl ? 0.05 : 0.12, 0.42, 0.88);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), softwareGl ? 0.04 : 0.08, 0.32, 0.96);
 composer.addPass(bloomPass);
 const smaaPass = new SMAAPass();
 smaaPass.enabled = !softwareGl;
@@ -165,7 +165,7 @@ let walk = pickup.position.clone().add(curbShift(pickupDist, 1.8));
 walk.y = ROAD_Y + 1.62;
 const capitolAim = project(CAPITOL.lon, CAPITOL.lat).sub(walk);
 let lookYaw = Math.atan2(-capitolAim.x, -capitolAim.z);
-let lookPitch = -0.04;
+let lookPitch = -0.11;
 let orbitYaw = 0.58;
 let orbitPitch = 0.12;
 let last = performance.now();
@@ -235,8 +235,9 @@ function lampForPhase() {
 }
 
 function matchCard() {
-  return `<div class="id-row"><div class="plate-badge"><span>TEXAS</span><b>${VEHICLE_PLATE}</b></div>
-    <div class="mega-card"><i style="background:${MEGALAMP.hex}"></i><div><small>MEGALAMP</small><b>Look for ${MEGALAMP.name}</b></div></div></div>`;
+  return `<div class="lightbar" style="--lamp:${MEGALAMP.hex}"><span>Front light bar · ${MEGALAMP.name}</span></div>
+    <div class="id-row"><div class="plate-badge"><span>TEXAS</span><b>${VEHICLE_PLATE}</b></div>
+    <div class="mega-card"><i style="background:${MEGALAMP.hex}"></i><div><small>MATCH COLOR</small><b>${MEGALAMP.name}</b></div></div></div>`;
 }
 function renderUI() {
   lampForPhase();
@@ -248,22 +249,23 @@ function renderUI() {
   const chapter = document.querySelector<HTMLElement>('.chapter')!;
   chapter.style.display = phase === 'explore' ? 'block' : 'none';
   phone.hidden = !phoneVisible || phase === 'ride';
+  phone.classList.toggle('matching', phase === 'dispatch' || phase === 'pickup');
   cabin.hidden = phase !== 'ride' && phase !== 'boarded' && phase !== 'arrived';
   const map = mapMarkup((distance - pickupDist) / Math.max(1, dropoffDist - pickupDist));
   const inside = pointInRing(PICKUP.lon, PICKUP.lat, AUSTIN_ROBOTAXI_GEOFENCE) && pointInRing(DROPOFF.lon, DROPOFF.lat, AUSTIN_ROBOTAXI_GEOFENCE);
   const canStart = belted && door < 0.08;
-  if (phase === 'explore') body.innerHTML = `<h2>Where to?</h2><p class="phone-sub">Pick a stop inside the Austin service area. This trip stays on Congress.</p>${map}
+  if (phase === 'explore') body.innerHTML = `<h2>Where to?</h2><p class="phone-sub">Enter a destination inside the service area. This trip stays on Congress.</p>${map}
     <div class="route-card"><div class="route-row"><i class="dot"></i><div><small>PICKUP</small><b>${PICKUP.name}</b></div><span class="chip in">In area</span></div>
     <div class="route-row"><i class="square"></i><div><small>DESTINATION</small><b>${DROPOFF.name}</b></div><span class="chip ${inside ? 'in' : 'out'}">${inside ? 'In area' : 'Outside'}</span></div></div>
     <div class="fare"><span>Cybercab <small>2 seats · No wheel · Simulated fare</small></span><b>~3 min<small>Est. wait under 1 min</small></b></div>
     <p class="geo-note">${GEOFENCE_NOTE}</p>
     <button class="primary" id="request" ${inside ? '' : 'disabled'}>Confirm <span>↗</span></button>
     <p class="micro">Independent concept. No real booking, fare, or Tesla connection. Hours simulated 6:00–23:00.</p>`;
-  if (phase === 'dispatch') body.innerHTML = `<h2>Your Cybercab is on the way.</h2><p class="phone-sub">Match the Megalamp color and the license plate before you get in.</p>${map}
+  if (phase === 'dispatch') body.innerHTML = `<h2>On the way.</h2><p class="phone-sub">Match the front light bar and the plate before you get in.</p>${map}
     <p class="vehicle-kicker">${VEHICLE_LABEL}</p>${matchCard()}
     <button class="secondary" id="cancel">Cancel request</button>`;
-  if (phase === 'pickup') body.innerHTML = `<h2>Your Cybercab has arrived.</h2><p class="phone-sub">Hazards are on. Front light bar is ${MEGALAMP.name}. Plate TX ${VEHICLE_PLATE}. A door opens when your phone is detected.</p>${map}
-    ${matchCard()}
+  if (phase === 'pickup') body.innerHTML = `<h2>Your Cybercab has arrived.</h2><p class="phone-sub">At the curb. Hazards are on. Match the front light bar, then the plate.</p>${map}
+    <p class="arrive-distance">At the east curb</p>${matchCard()}
     <button class="primary" id="enter">Enter <span>→</span></button>`;
   if (phase === 'boarded') body.innerHTML = `<h2>Buckle up.</h2><p class="phone-sub">The door closes once everyone is buckled. Then tap Start Ride here or on the cabin screen.</p>
     <button class="secondary" id="buckle-phone">${belted ? 'Seatbelt fastened' : 'Fasten seatbelt'}</button>
@@ -281,19 +283,20 @@ function renderUI() {
     const boardedCopy = belted && !canStart
       ? 'Closing the door. Start Ride unlocks when it is shut.'
       : 'Buckle up. The door closes when everyone is buckled. Then Start Ride.';
-    cabin.innerHTML = `<div class="cabin-header"><span>CYBERCAB</span><span>6:42 PM · ${temperature}° · ${belted ? 'BELT' : 'UNBUCKLED'} · CAM</span></div>
+    const rideStatus = phase === 'ride' && !paused ? 'EN ROUTE' : 'PARK';
+    const kicker = phase === 'arrived' ? 'ARRIVED' : phase === 'boarded' ? 'BUCKLE UP' : 'DESTINATION';
+    cabin.innerHTML = `<div class="cabin-header"><span class="cabin-status">${rideStatus}</span><span>6:42</span><span>${temperature}°</span><span>${belted ? 'BELT' : 'UNBUCKLED'}</span><span>CAM</span></div>
       <div class="cabin-grid"><div class="cabin-map">${map}</div>
-      <div class="cabin-copy"><small>${phase === 'arrived' ? 'YOU HAVE ARRIVED' : phase === 'boarded' ? 'READY TO START' : 'YOUR DESTINATION'}</small>
+      <div class="cabin-copy"><small>${kicker}</small>
       <h2>${DROPOFF.name}</h2>
       <p>${phase === 'boarded' ? boardedCopy : phase === 'arrived' ? 'In Park. Hazards on. Open the door, step out, then complete the trip in the app.' : `${eta} min · ${remainingM / 1000 > 0 ? (remainingM / 1000).toFixed(2) : '0.00'} km remaining`}</p>
-      ${phase === 'boarded' ? `<button class="secondary" id="buckle">${belted ? 'Seatbelt fastened' : 'Fasten seatbelt'}</button><button class="primary" id="start-ride" ${canStart ? '' : 'disabled'}>Start Ride</button>` : phase === 'arrived' ? '<button class="primary" id="exit-cabin">Open door</button>' : `<button class="secondary" id="pause">${paused ? 'Resume ride' : 'Pull over'}</button>`}
+      <div class="cabin-actions">${phase === 'boarded' ? `<button class="secondary" id="buckle">${belted ? 'Seatbelt fastened' : 'Fasten seatbelt'}</button><button class="primary" id="start-ride" ${canStart ? '' : 'disabled'}>Start Ride</button>` : phase === 'arrived' ? '<button class="primary" id="exit-cabin">Open door</button>' : `<button class="secondary" id="pause">${paused ? 'Resume ride' : 'Pull over'}</button>`}</div>
       </div></div>
       <div class="cabin-bottom">
         <button id="temp-down" aria-label="Lower cabin temperature">−</button><b>${temperature}°</b><button id="temp-up" aria-label="Raise cabin temperature">+</button>
         <span>AUTO</span>
         <button id="music">${muted ? 'Sound off' : 'Media'}</button>
         <button id="support" class="ghost">Support</button>
-        <span class="cabin-status">${phase === 'ride' && !paused ? 'AUTONOMOUS' : 'PARK'}</span>
       </div>`;
   }
   const fasten = () => { if (!belted) { belted = true; renderUI(); } };
@@ -320,7 +323,7 @@ function renderUI() {
   bind('cancel', () => { cam = 'walk'; distance = stageDist; setPhase('explore'); });
   bind('enter', () => {
     lookYaw = cab.group.rotation.y;
-    lookPitch = 0.16;
+    lookPitch = 0.08;
     cam = 'cabin';
     doorRequested = true;
     setPhase('boarded');
@@ -349,7 +352,7 @@ function renderUI() {
     walk.y = ROAD_Y + 1.62;
     const again = project(CAPITOL.lon, CAPITOL.lat).sub(walk);
     lookYaw = Math.atan2(-again.x, -again.z);
-    lookPitch = -0.04;
+    lookPitch = -0.11;
     setPhase('explore');
   });
   bind('pause', () => { paused = !paused; renderUI(); });
@@ -424,7 +427,9 @@ function applyQuality(next: Quality, announce = true) {
   sun.shadow.mapSize.set(cine ? 2048 : 1024, cine ? 2048 : 1024);
   if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
   if (ssaoPass) ssaoPass.enabled = cine;
-  bloomPass.strength = perf ? 0.04 : cine ? 0.2 : 0.12;
+  bloomPass.threshold = 0.96;
+  bloomPass.strength = perf ? 0.04 : cine ? 0.12 : 0.08;
+  bloomPass.radius = 0.32;
   smaaPass.enabled = !perf;
   if (announce) toast(cine ? 'Cinematic graphics' : perf ? 'Performance graphics' : 'Balanced graphics');
 }
@@ -443,7 +448,7 @@ function updateCamera(dt: number) {
   const view = cam;
   switch (view) {
     case 'cabin': {
-      const local = new THREE.Vector3(0.12, 0.96, 0.35);
+      const local = new THREE.Vector3(0, 0.84, -0.2);
       local.applyMatrix4(cab.group.matrixWorld);
       camera.position.copy(local);
       camera.rotation.order = 'YXZ';
@@ -452,7 +457,7 @@ function updateCamera(dt: number) {
     }
     case 'chase': {
       const face = phase === 'dispatch' || phase === 'pickup';
-      if (face) chaseOffset.set(5.6, 2.7, -5.2);
+      if (face) chaseOffset.set(2.6, 1.55, -7.35);
       else chaseOffset.set(Math.sin(orbitYaw) * 3.1 + 2.4, 2.7 + orbitPitch * 1.2, 7.5);
       chaseOffset.y = Math.max(1.7, chaseOffset.y);
       desiredCam.copy(chaseOffset).applyQuaternion(cab.group.quaternion).add(cab.group.position);
@@ -465,7 +470,7 @@ function updateCamera(dt: number) {
         localCam.applyQuaternion(cab.group.quaternion);
         camera.position.copy(cab.group.position).add(localCam);
       }
-      lookTarget.set(0, 0.95, face ? -0.35 : -7.2).applyQuaternion(cab.group.quaternion).add(cab.group.position);
+      lookTarget.set(0, 0.62, face ? -1.85 : -7.2).applyQuaternion(cab.group.quaternion).add(cab.group.position);
       camera.lookAt(lookTarget);
       break;
     }

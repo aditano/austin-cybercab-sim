@@ -78,10 +78,19 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
   }
   const treeGeometry=new THREE.IcosahedronGeometry(1,2);
   function tree(parent:THREE.Object3D,x:number,z:number,seed:number) {
-    const h=6+seeded(seed)*6;
-    box(parent,x,h*.38,z,.28,h*.76,.28,trunk);
-    const crown=new THREE.Mesh(treeGeometry,foliage);crown.position.set(x,h,z);crown.scale.set(h*.52,h*.58,h*.52);crown.rotation.y=seed; crown.castShadow=true;parent.add(crown);
-    const canopy=new THREE.Mesh(treeGeometry,leavesB);canopy.position.set(x+h*.12,h*.78,z-h*.08);canopy.scale.set(h*.38,h*.32,h*.4);canopy.castShadow=true;parent.add(canopy);
+    const h=8.5+seeded(seed)*2.4;
+    box(parent,x,h*.46,z,.22,h*.92,.22,trunk);
+    const crown=new THREE.Mesh(treeGeometry,foliage);
+    crown.position.set(x,h+.35,z);
+    crown.scale.set(h*.62,h*.16,h*.55);
+    crown.rotation.y=seed;
+    crown.castShadow=true;
+    parent.add(crown);
+    const canopy=new THREE.Mesh(treeGeometry,leavesB);
+    canopy.position.set(x+h*.08,h-.15,z-h*.06);
+    canopy.scale.set(h*.4,h*.1,h*.36);
+    canopy.castShadow=true;
+    parent.add(canopy);
   }
   let junctions:THREE.Vector2[]=[];
   function nearJunction(p:THREE.Vector2,radius=15) {return junctions.some(j=>j.distanceToSquared(p)<radius*radius);}
@@ -105,7 +114,7 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
         if(Math.floor((travelled+d)/12)%2===0)for(const offset of major?[-width*.25,width*.25]:[0])strip(parent,center.clone().addScaledVector(normal,offset),end.clone().addScaledVector(normal,offset),.12,.165,stripe,.012);
       }
       if(major)for(let d=12;d<len-8;d+=42) {
-        const v=a.clone().addScaledVector(direction,d).addScaledVector(normal,width*.5+1.8);
+        const v=a.clone().addScaledVector(direction,d).addScaledVector(normal,width*.5+4.4);
         if(nearJunction(v,22))continue;
         // Street tree wells, slim light poles and benches make the curb read at human scale.
         box(parent,v.x,.09,v.y,2.1,.16,2.1,lawn);tree(parent,v.x,v.y,d+i*12);
@@ -219,7 +228,7 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
   }
   function dressLandmarks(parent:THREE.Object3D,data:MapData) {
     const granite=new THREE.MeshStandardMaterial({color:0xd7b09a,roughness:.78});
-    const domeMat=new THREE.MeshStandardMaterial({color:0xf0b5a4,roughness:.4,metalness:.02,emissive:0xff8d73,emissiveIntensity:1.05});
+    const domeMat=new THREE.MeshStandardMaterial({color:0xc45c52,roughness:.62,metalness:.04,emissive:0x6a3028,emissiveIntensity:.55});
     const statueMat=new THREE.MeshStandardMaterial({color:0xf6f1e8,roughness:.5});
     const lit=new THREE.MeshStandardMaterial({color:0xf0d2a0,emissive:0xffb45a,emissiveIntensity:.7});
     const crownGlass=new THREE.MeshPhysicalMaterial({color:0xb7d0d2,metalness:.55,roughness:.08,transparent:true,opacity:.84,envMapIntensity:1.3});
@@ -255,28 +264,28 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
     }
     const cap=point([CAPITOL.lon,CAPITOL.lat]);
     const cx=cap.x,cz=cap.y;
-    box(parent,cx,16,cz,110,32,72,granite);
-    box(parent,cx,22,cz+38,40,44,20,granite);
-    for(let i=-4;i<=4;i++) box(parent,cx+i*4.2,20,cz+50,1.35,34,1.35,granite);
-    const pediment=new THREE.Mesh(new THREE.ConeGeometry(22,12,4),granite);
-    pediment.position.set(cx,46,cz+46);pediment.rotation.y=Math.PI/4;parent.add(pediment);
-    for(const side of [-1,1]) box(parent,cx+side*46,15,cz,36,26,48,granite);
-    const drum=new THREE.Mesh(new THREE.CylinderGeometry(20,22,26,28),domeMat);
-    drum.position.set(cx,58,cz);drum.castShadow=true;parent.add(drum);
-    const dome=new THREE.Mesh(new THREE.SphereGeometry(30,32,18,0,Math.PI*2,0,Math.PI/2),domeMat);
-    dome.position.set(cx,71,cz);dome.castShadow=true;parent.add(dome);
-    const ribMat=new THREE.MeshStandardMaterial({color:0xf8efe6,roughness:.45,emissive:0xffe2cc,emissiveIntensity:.25});
-    for(let i=0;i<8;i++){
-      const rib=new THREE.Mesh(new THREE.BoxGeometry(.7,22,.7),ribMat);
-      const a=i/8*Math.PI*2;
-      rib.position.set(cx+Math.cos(a)*10,86,cz+Math.sin(a)*10);
-      rib.lookAt(cx,86,cz);
+    box(parent,cx,22,cz,128,44,84,granite);
+    box(parent,cx,30,cz+46,48,58,24,granite);
+    for(let i=-4;i<=4;i++) box(parent,cx+i*5,28,cz+62,1.6,46,1.6,granite);
+    const pediment=new THREE.Mesh(new THREE.ConeGeometry(28,16,4),granite);
+    pediment.position.set(cx,62,cz+56);pediment.rotation.y=Math.PI/4;parent.add(pediment);
+    for(const side of [-1,1]) box(parent,cx+side*54,20,cz,42,34,56,granite);
+    const drum=new THREE.Mesh(new THREE.CylinderGeometry(26,30,34,28),domeMat);
+    drum.position.set(cx,78,cz);drum.castShadow=true;parent.add(drum);
+    const dome=new THREE.Mesh(new THREE.SphereGeometry(42,36,20,0,Math.PI*2,0,Math.PI/2),domeMat);
+    dome.position.set(cx,95,cz);dome.castShadow=true;parent.add(dome);
+    const ribMat=new THREE.MeshStandardMaterial({color:0xf3e4d4,roughness:.5,emissive:0xc48a74,emissiveIntensity:.2});
+    for(let i=0;i<10;i++){
+      const rib=new THREE.Mesh(new THREE.BoxGeometry(.9,30,.9),ribMat);
+      const a=i/10*Math.PI*2;
+      rib.position.set(cx+Math.cos(a)*14,112,cz+Math.sin(a)*14);
+      rib.lookAt(cx,112,cz);
       parent.add(rib);
     }
-    const lantern=new THREE.Mesh(new THREE.CylinderGeometry(3.2,4,12,12),domeMat);
-    lantern.position.set(cx,100,cz);parent.add(lantern);
-    const statue=new THREE.Mesh(new THREE.ConeGeometry(1.3,14,6),statueMat);
-    statue.position.set(cx,112,cz);parent.add(statue);
+    const lantern=new THREE.Mesh(new THREE.CylinderGeometry(4.2,5.2,16,12),domeMat);
+    lantern.position.set(cx,132,cz);parent.add(lantern);
+    const statue=new THREE.Mesh(new THREE.ConeGeometry(1.8,18,6),statueMat);
+    statue.position.set(cx,150,cz);parent.add(statue);
   }
   function createFallback() {
     const coords=(x:number,z:number)=>[-97.745+x/96100,30.264-z/111320];
