@@ -91,8 +91,10 @@ export function createLighting(
         if (!(child instanceof THREE.Mesh)) return;
         const mats = Array.isArray(child.material) ? child.material : [child.material];
         for (const mat of mats) {
-          if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhysicalMaterial) {
-            if (map) mat.envMap = map;
+          if (mat instanceof THREE.MeshStandardMaterial) {
+            if (mat.envMap === map) continue;
+            mat.envMap = map;
+            mat.needsUpdate = true;
           }
         }
       });

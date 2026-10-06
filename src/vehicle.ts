@@ -429,6 +429,7 @@ export async function loadCybercab() {
     },
     wheelSpin() { return spins[0].rotation.x; },
     wheelSteer() { return steers[0].rotation.y; },
+    setContactDisc(visible: boolean) { contact.visible = visible; },
     update(dt: number, speed: number, _viewDistance = 8, curbRate = 0) {
       const yaw = group.rotation.y;
       const dyaw = Math.atan2(Math.sin(yaw - prevYaw), Math.cos(yaw - prevYaw));

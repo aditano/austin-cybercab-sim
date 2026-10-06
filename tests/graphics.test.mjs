@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
   GRAPHICS_KEY, PRESET_GRAPHICS, QUALITY_ORDER, adaptQuality, autoQualityPreset, emptyAdaptState,
-  graphicsFor, parseGraphicsStore, resolvedQuality, streetBudget,
+  graphicsFor, parseGraphicsStore, resolvedQuality, showContactDisc, streetBudget,
 } from '../src/logic.ts';
 
 test('Auto picks a hardware-aware preset and never starts software GL above Low', () => {
@@ -54,6 +54,12 @@ test('graphics store and preset toggles stay valid', () => {
   const merged = graphicsFor('low', { shadows: true });
   assert.equal(merged.shadows, true);
   assert.equal(PRESET_GRAPHICS.low.shadows, false);
+  assert.equal(PRESET_GRAPHICS.high.reflections, 'probe');
+  assert.equal(PRESET_GRAPHICS.ultra.reflections, 'ssr');
+  assert.equal(PRESET_GRAPHICS.low.cascades, 0);
+  assert.ok(PRESET_GRAPHICS.high.cascades >= 3);
+  assert.equal(showContactDisc(false), true);
+  assert.equal(showContactDisc(true), false);
   assert.deepEqual(QUALITY_ORDER, ['low', 'medium', 'high', 'ultra']);
   assert.equal(GRAPHICS_KEY, 'cybercab-graphics');
 });
@@ -87,4 +93,10 @@ test('bundled street models and licenses are recorded', () => {
   const vehicle = fs.readFileSync(new URL('../src/vehicle.ts', import.meta.url), 'utf8');
   assert.match(vehicle, /models\/cybercab\.glb/);
   assert.doesNotMatch(vehicle, /createStreetAssets/);
+  assert.match(vehicle, /setContactDisc/);
+  const main = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  assert.match(main, /setContactDisc\(showContactDisc\(graphics\.shadows\)\)/);
+  const lighting = fs.readFileSync(new URL('../src/lighting.ts', import.meta.url), 'utf8');
+  assert.match(lighting, /mat\.envMap = map/);
+  assert.doesNotMatch(lighting, /if \(map\) mat\.envMap = map/);
 });
