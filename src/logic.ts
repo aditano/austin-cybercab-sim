@@ -271,6 +271,11 @@ export function shadowCascades(quality: Quality): number {
   return PRESET_GRAPHICS[quality].cascades;
 }
 
+/** The glTF has no baked shadow. The contact disc stands in until a shadow map is on. */
+export function showContactDisc(shadows: boolean): boolean {
+  return !shadows;
+}
+
 export function resolvedQuality(mode: QualityMode, profile: HardwareProfile): Quality {
   return mode === 'auto' ? autoQualityPreset(profile) : mode;
 }

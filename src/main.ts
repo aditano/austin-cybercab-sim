@@ -17,7 +17,7 @@ import {
   PICKUP, ROAD_Y, STOP_INSET, VEHICLE_LABEL, VEHICLE_PLATE, measurePath, pointInRing, project, samplePath,
 } from './geo';
 import {
-  DESTINATIONS, GRAPHICS_KEY, QUALITY_LABEL, adaptQuality, blockedSpeed, doorTarget,
+  DESTINATIONS, GRAPHICS_KEY, QUALITY_LABEL, adaptQuality, blockedSpeed, doorTarget, showContactDisc,
   emptyAdaptState, graphicsFor, parseGraphicsStore, parseSnapshot, pixelRatioFor, resolvedQuality,
   stepDoor, togglePhone, type GraphicsToggles, type Quality, type QualityMode, type RideSnapshot,
 } from './logic';
@@ -654,6 +654,7 @@ function applyQuality(next: Quality, announce = true, fromUser = false) {
   bloomPass.radius = quality === 'ultra' ? 0.42 : 0.32;
   smaaPass.enabled = graphics.aa && !coarsePointer && !softwareGl;
   scene.environmentIntensity = quality === 'ultra' ? 1.25 : quality === 'low' ? 0.9 : 1.15;
+  if (cabMounted) cab.setContactDisc(showContactDisc(graphics.shadows));
   document.querySelector('#settings')?.setAttribute('aria-label', `${gfxLabel()} graphics. Activate to open settings.`);
   syncGfxMenu();
   if (announce) toast(`${gfxLabel()} graphics`);
@@ -958,6 +959,7 @@ function mountCab(loaded: Cybercab) {
   cab = loaded;
   cabMounted = true;
   scene.add(cab.group);
+  cab.setContactDisc(showContactDisc(graphics.shadows));
   cab.group.position.copy(sample(stageDist).position);
   cab.group.position.y = ROAD_Y;
   cab.group.rotation.y = sample(stageDist).heading;
