@@ -7,7 +7,7 @@ import { MEGALAMP, VEHICLE_PLATE } from './geo';
 export type LampMode = 'idle' | 'match';
 
 const WHEEL_R = 0.33;
-const DOOR_OPEN = 1.65;
+const DOOR_OPEN = 1.95;
 
 type Axis = 'x' | 'y' | 'z';
 
@@ -241,7 +241,7 @@ export async function loadCybercab() {
     if (hazardsOn) red.emissiveIntensity = blink ? 3.1 : 0.2;
   }
 
-  return {
+  const cab = {
     group,
     megalamp,
     /** Minimum camera distance from the cab origin, outside the body. */
@@ -269,7 +269,10 @@ export async function loadCybercab() {
       if (lod1) lod1.visible = far;
     },
   };
+  return cab;
 }
+
+export type Cybercab = Awaited<ReturnType<typeof loadCybercab>>;
 
 export type StreetKind = 'sedan' | 'suv' | 'van' | 'pickup';
 

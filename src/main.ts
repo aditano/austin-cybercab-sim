@@ -6,8 +6,9 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { Sky } from 'three/addons/objects/Sky.js';
+import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { createWorld } from './world';
-import { loadCybercab } from './vehicle';
+import { loadCybercab, type Cybercab } from './vehicle';
 import { createCityLife } from './life';
 import {
   APPROACH_RUNWAY, AUSTIN_ROBOTAXI_GEOFENCE, CAPITOL, CONGRESS_ROUTE, CURB_PULL, DROPOFF, GEOFENCE_NOTE, MEGALAMP,
@@ -38,7 +39,7 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.08;
+renderer.toneMappingExposure = 1.02;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.localClippingEnabled = true;
 
@@ -50,19 +51,20 @@ const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.15, 3
 const sky = new Sky();
 sky.scale.setScalar(45000);
 const su = sky.material.uniforms;
-su.turbidity.value = 8.2;
-su.rayleigh.value = 1.25;
-su.mieCoefficient.value = 0.013;
-su.mieDirectionalG.value = 0.87;
+su.turbidity.value = 3.4;
+su.rayleigh.value = 1.8;
+su.mieCoefficient.value = 0.006;
+su.mieDirectionalG.value = 0.82;
 const sunPosition = new THREE.Vector3(-0.95, 0.155, 0.42);
 su.sunPosition.value.copy(sunPosition);
 scene.add(sky);
 const pmrem = new THREE.PMREMGenerator(renderer);
+pmrem.compileEquirectangularShader();
 scene.environment = pmrem.fromScene(sky as unknown as THREE.Scene, 0.03).texture;
-scene.environmentIntensity = 0.58;
+scene.environmentIntensity = 0.95;
 
-scene.add(new THREE.HemisphereLight('#ffd2a8', '#6d5342', 0.46));
-const sun = new THREE.DirectionalLight('#ffb87a', 3.55);
+scene.add(new THREE.HemisphereLight('#ffd7b0', '#5c4638', 0.28));
+const sun = new THREE.DirectionalLight('#ffb56a', 3.05);
 sun.position.copy(sunPosition).normalize().multiplyScalar(280);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
@@ -71,14 +73,14 @@ sun.shadow.camera.right = 46;
 sun.shadow.camera.top = 46;
 sun.shadow.camera.bottom = -46;
 sun.shadow.camera.far = 700;
-sun.shadow.bias = -0.00025;
-sun.shadow.normalBias = 0.04;
+sun.shadow.bias = -0.00035;
+sun.shadow.normalBias = 0.045;
+sun.shadow.radius = 2.5;
 scene.add(sun);
 scene.add(sun.target);
 
 const world = createWorld(scene);
-const cab = await loadCybercab();
-scene.add(cab.group);
+let cab: Cybercab;
 
 const laneOffset = new THREE.Vector3(4.7, 0, 1.5);
 const centerline = CONGRESS_ROUTE.map(([lon, lat]) => project(lon, lat).add(laneOffset));
@@ -154,12 +156,9 @@ let doorRequested = false;
 let hold = 0;
 let blockedFor = 0;
 let curbState = 0;
-type Quality = 'balanced' | 'cinematic' | 'performance';
+type Quality = 'balanced' | 'cinematic' | 'ultra' | 'performance';
 let quality: Quality = softwareGl ? 'performance' : 'balanced';
 const pickup = sample(pickupDist);
-cab.group.position.copy(sample(stageDist).position);
-cab.group.position.y = ROAD_Y;
-cab.group.rotation.y = sample(stageDist).heading;
 
 let walk = pickup.position.clone().add(curbShift(pickupDist, 1.8));
 walk.y = ROAD_Y + 1.62;
@@ -179,6 +178,7 @@ function mapPoint(v: THREE.Vector3, overview = false) {
   return [140 + (v.x - 165) * 0.29, 122 + (v.z + 300) * 0.29];
 }
 
+let uiReady = false;
 fetch(`${import.meta.env.BASE_URL}data/austin.json`).then(r => r.json()).then(data => {
   const path = (coords: number[][]) => coords.map(([lon, lat], i) => {
     const [x, y] = mapPoint(project(lon, lat));
@@ -186,7 +186,7 @@ fetch(`${import.meta.env.BASE_URL}data/austin.json`).then(r => r.json()).then(da
   }).join(' ');
   mapFeatures = data.buildings.map((b: { coordinates: number[][] }) => `<path d="${path(b.coordinates)}Z" fill="#d4ddd0"/>`).join('')
     + data.roads.map((r: { coordinates: number[][] }) => `<path d="${path(r.coordinates)}" fill="none" stroke="#f7f8f4" stroke-width="3"/>`).join('');
-  renderUI();
+  if (uiReady) renderUI();
 }).catch(() => toast('Map unavailable. Showing the bundled route.'));
 
 function geofencePath() {
@@ -415,26 +415,32 @@ window.addEventListener('keydown', e => {
 window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
 window.addEventListener('blur', () => keys.clear());
 function applyQuality(next: Quality, announce = true) {
-  quality = softwareGl && next === 'cinematic' ? 'performance' : next;
+  const heavy = next === 'cinematic' || next === 'ultra';
+  quality = softwareGl && heavy ? 'performance' : next;
   const perf = quality === 'performance';
-  const cine = quality === 'cinematic';
-  const ratio = perf ? 1 : Math.min(devicePixelRatio, cine ? 1.5 : 1.25);
+  const ultra = quality === 'ultra';
+  const cine = quality === 'cinematic' || ultra;
+  const ratio = perf ? 1 : Math.min(devicePixelRatio, ultra ? 1.75 : cine ? 1.5 : 1.25);
   renderer.setPixelRatio(ratio);
   renderer.setSize(innerWidth, innerHeight);
   composer.setPixelRatio(ratio);
   composer.setSize(innerWidth, innerHeight);
+  renderer.shadowMap.enabled = !perf;
   sun.castShadow = !perf;
-  sun.shadow.mapSize.set(cine ? 2048 : 1024, cine ? 2048 : 1024);
+  sun.shadow.mapSize.set(ultra ? 4096 : cine ? 2048 : 1024, ultra ? 4096 : cine ? 2048 : 1024);
+  sun.shadow.radius = ultra ? 8 : cine ? 4 : 2.5;
   if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
   if (ssaoPass) ssaoPass.enabled = cine;
   bloomPass.threshold = 0.96;
-  bloomPass.strength = perf ? 0.04 : cine ? 0.12 : 0.08;
-  bloomPass.radius = 0.32;
+  bloomPass.strength = perf ? 0.04 : ultra ? 0.16 : cine ? 0.12 : 0.08;
+  bloomPass.radius = ultra ? 0.42 : 0.32;
   smaaPass.enabled = !perf;
-  if (announce) toast(cine ? 'Cinematic graphics' : perf ? 'Performance graphics' : 'Balanced graphics');
+  scene.environmentIntensity = ultra ? 1.15 : perf ? 0.55 : 0.95;
+  const label = ultra ? 'Ultra graphics' : cine ? 'Cinematic graphics' : perf ? 'Performance graphics' : 'Balanced graphics';
+  if (announce) toast(label);
 }
 bind('settings', () => {
-  const order: Quality[] = ['balanced', 'cinematic', 'performance'];
+  const order: Quality[] = ['balanced', 'cinematic', 'ultra', 'performance'];
   applyQuality(order[(order.indexOf(quality) + 1) % order.length]);
 });
 
@@ -460,7 +466,7 @@ function updateCamera(dt: number) {
     }
     case 'chase': {
       const face = phase === 'dispatch' || phase === 'pickup';
-      if (face) chaseOffset.set(2.6, 1.55, -7.35);
+      if (face) chaseOffset.set(4.6, 2.05, -3.4);
       else chaseOffset.set(Math.sin(orbitYaw) * 3.1 + 2.4, 2.7 + orbitPitch * 1.2, 7.5);
       chaseOffset.y = Math.max(1.7, chaseOffset.y);
       desiredCam.copy(chaseOffset).applyQuaternion(cab.group.quaternion).add(cab.group.position);
@@ -473,7 +479,7 @@ function updateCamera(dt: number) {
         localCam.applyQuaternion(cab.group.quaternion);
         camera.position.copy(cab.group.position).add(localCam);
       }
-      lookTarget.set(0, 0.62, face ? -1.85 : -7.2).applyQuaternion(cab.group.quaternion).add(cab.group.position);
+      lookTarget.set(face ? 0.2 : 0, face ? 0.82 : 0.62, face ? -0.1 : -7.2).applyQuaternion(cab.group.quaternion).add(cab.group.position);
       camera.lookAt(lookTarget);
       break;
     }
@@ -594,11 +600,57 @@ function animate(now: number) {
   composer.render();
   requestAnimationFrame(animate);
 }
-renderUI();
 camera.position.copy(walk);
 camera.rotation.order = 'YXZ';
 camera.rotation.set(lookPitch, lookYaw, 0);
-requestAnimationFrame(animate);
+
+function mountCab(loaded: Cybercab) {
+  cab = loaded;
+  scene.add(cab.group);
+  cab.group.position.copy(sample(stageDist).position);
+  cab.group.position.y = ROAD_Y;
+  cab.group.rotation.y = sample(stageDist).heading;
+  uiReady = true;
+  renderUI();
+  requestAnimationFrame(animate);
+  Object.assign(window, {
+    render_game_to_text: () => JSON.stringify({
+      phase, belted, distance, totalDistance: dropoffDist - pickupDist, paused, temperature, door,
+      megalamp: MEGALAMP.name, plate: VEHICLE_PLATE, camera: cam,
+      geofence: pointInRing(PICKUP.lon, PICKUP.lat, AUSTIN_ROBOTAXI_GEOFENCE),
+      position: camera.position.toArray(),
+      coordinates: 'meters; origin -97.745,30.264; X east, Y up, Z south',
+      vehicle: cab.group.position.toArray(),
+      cameraGap: Number(camera.position.distanceTo(cab.group.position).toFixed(2)),
+      speedMph: Math.round(speedMps * 2.23694),
+    }),
+    advanceTime: (ms: number) => {
+      for (let t = 0; t < ms; t += 16.667) update(Math.min(16.667, ms - t) / 1000);
+      renderUI();
+      composer.render();
+    },
+    frameVehicle: (eye: number[], look: number[]) => {
+      holdCam = true;
+      camera.position.copy(new THREE.Vector3(eye[0], eye[1], eye[2]).applyMatrix4(cab.group.matrixWorld));
+      camera.lookAt(new THREE.Vector3(look[0], look[1], look[2]).applyMatrix4(cab.group.matrixWorld));
+      composer.render();
+    },
+    releaseCamera: () => { holdCam = false; },
+  });
+}
+
+void Promise.all([
+  loadCybercab(),
+  new HDRLoader().loadAsync(`${import.meta.env.BASE_URL}textures/evening_road_01_puresky_1k.hdr`).then((hdri) => {
+    hdri.mapping = THREE.EquirectangularReflectionMapping;
+    const env = pmrem.fromEquirectangular(hdri).texture;
+    hdri.dispose();
+    scene.environment = env;
+  }),
+]).then(([loaded]) => mountCab(loaded)).catch((error) => {
+  console.error(error);
+  toast('The Cybercab model did not load.');
+});
 
 window.addEventListener('resize', () => {
   camera.aspect = innerWidth / innerHeight;
@@ -607,27 +659,3 @@ window.addEventListener('resize', () => {
   composer.setSize(innerWidth, innerHeight);
 });
 
-Object.assign(window, {
-  render_game_to_text: () => JSON.stringify({
-    phase, belted, distance, totalDistance: dropoffDist - pickupDist, paused, temperature, door,
-    megalamp: MEGALAMP.name, plate: VEHICLE_PLATE, camera: cam,
-    geofence: pointInRing(PICKUP.lon, PICKUP.lat, AUSTIN_ROBOTAXI_GEOFENCE),
-    position: camera.position.toArray(),
-    coordinates: 'meters; origin -97.745,30.264; X east, Y up, Z south',
-    vehicle: cab.group.position.toArray(),
-    cameraGap: Number(camera.position.distanceTo(cab.group.position).toFixed(2)),
-    speedMph: Math.round(speedMps * 2.23694),
-  }),
-  advanceTime: (ms: number) => {
-    for (let t = 0; t < ms; t += 16.667) update(Math.min(16.667, ms - t) / 1000);
-    renderUI();
-    composer.render();
-  },
-  frameVehicle: (eye: number[], look: number[]) => {
-    holdCam = true;
-    camera.position.copy(new THREE.Vector3(eye[0], eye[1], eye[2]).applyMatrix4(cab.group.matrixWorld));
-    camera.lookAt(new THREE.Vector3(look[0], look[1], look[2]).applyMatrix4(cab.group.matrixWorld));
-    composer.render();
-  },
-  releaseCamera: () => { holdCam = false; },
-});

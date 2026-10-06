@@ -33,7 +33,7 @@ The app runs in the browser on Windows, macOS, and Linux when the browser and gr
 - Drag on the 3D view to look around.
 - Use **W A S D** to walk in the opening scene.
 - Press **P** to show or hide the request phone, and **F** to toggle fullscreen.
-- Use the top-right graphics button to cycle balanced, cinematic, and performance settings. Balanced is the default.
+- Use the top-right graphics button to cycle balanced, cinematic, ultra, and performance settings. Balanced is the default on a normal GPU. Ultra raises the shadow map and pixel ratio. Software renderers stay on performance.
 - On the phone, confirm a ride, match the violet Megalamp and plate, and choose **Enter** when the cab has stopped. WASD returns you to walking while it approaches.
 - In the cabin, choose **Fasten seatbelt**, then **Start Ride** after the doors close. During the ride, adjust the cabin temperature, toggle the generated ambient tone, or pause and resume the trip.
 - At the destination, exit and choose **Take another ride** to repeat the experience.
@@ -42,9 +42,22 @@ The request, pickup, ride timing, estimated time, fare-like UI, cabin functions,
 
 ## Scope and accuracy
 
-The scene uses Three.js geometry, materials, lighting, fog, and post-processing to create a cinematic, procedural impression of downtown. It is not photogrammetry, a surveyed digital twin, or an Unreal Engine scene. Building shapes and heights are incomplete approximations, while facade detail, trees, street furniture, traffic, lane offsets, and travel time are not survey data. The Cybercab is an original subdivision-surface model (`tools/cybercab/build.py`) loaded as glTF. It is not manufacturer CAD, and the cabin UI is original artwork rather than a copy of production software.
+The scene uses Three.js with a meshopt-compressed Cybercab glTF, Poly Haven CC0 textures, image-based lighting, and post-processing. It is not photogrammetry, a surveyed digital twin, or an Unreal Engine scene. Building shapes and heights are incomplete approximations. The Cybercab is an original subdivision-surface model built by `tools/cybercab/build.py`, with PBR paint, glass, and tires. It is not manufacturer CAD. The cabin and phone use original artwork.
 
 The bundled OpenStreetMap extract covers a compact downtown area around Congress Avenue, from the South Congress riverfront through northern downtown, and includes nearby streets, building footprints, and Lady Bird Lake shoreline. The simulated trip runs from Congress & 2nd to Congress & 7th and stays north of the lake; it does not cross the lake or model an Austin-wide route. OSM data is an input to the scene, not a live map feed or a Tesla service-area boundary. See [docs/RESEARCH.md](docs/RESEARCH.md) for source, extraction, and height-estimation details.
+
+## Asset credits
+
+The Cybercab glTF in `public/models/cybercab.glb` is built by `tools/cybercab/build.py`: an original subdivision-surface mesh, meshopt-compressed. It is not manufacturer CAD and not a factory scan. A CC BY 4.0 Sketchfab scan by [Grass Grass Grass (@zwir3kk)](https://sketchfab.com/3d-models/tesla-cybercab-3d-model-45c25fd8442b45129e47be2e66449ca3) exists, but the download API requires a Sketchfab login, so that file is not bundled.
+
+Environment images are [CC0](https://polyhaven.com/license) from [Poly Haven](https://polyhaven.com/):
+
+- [Evening Road 01 (Pure Sky)](https://polyhaven.com/a/evening_road_01_puresky) HDRI by Sergej Majboroda and Jarod Guest
+- [Asphalt 02](https://polyhaven.com/a/asphalt_02) by Rob Tuytel
+- [Concrete Floor Worn 001](https://polyhaven.com/a/concrete_floor_worn_001) by Dimitrios Savva and Rico Cilliers
+- [Concrete Wall 008](https://polyhaven.com/a/concrete_wall_008) by Charlotte Baglioni and Dario Barresi
+- [Bark Brown 02](https://polyhaven.com/a/bark_brown_02) by Rob Tuytel
+- [Tree Small 02](https://polyhaven.com/a/tree_small_02) leaf atlas by Rico Cilliers
 
 ## Map attribution
 
