@@ -15,8 +15,9 @@ test('door stroke matches the show-car close and the glTF hinge', () => {
   assert.ok(almost > 0.05 && almost < 0.08, `1.4 s should still be shut enough to start (${almost})`);
   assert.equal(stepDoor(0, 1, 0.75, false), 0.5);
   assert.equal(stepDoor(0.2, 1, 1, true), 1);
-  assert.equal(doorTarget('pickup', 0.1, false, false), 0);
-  assert.equal(doorTarget('pickup', 0.3, false, false), 1);
+  assert.equal(doorTarget('pickup', 0, false, false), 1);
+  assert.equal(doorTarget('dispatch', 0.1, false, false, false), 0);
+  assert.equal(doorTarget('dispatch', 0.1, false, false, true), 1);
   assert.equal(doorTarget('boarded', 1, false, false), 1);
   assert.equal(doorTarget('boarded', 1, true, false), 0);
   assert.equal(doorTarget('arrived', 1, true, false), 0);

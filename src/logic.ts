@@ -104,8 +104,9 @@ export function pointInRing(lon: number, lat: number, ring: readonly (readonly [
   return inside;
 }
 
-export function doorTarget(phase: string, elapsed: number, belted: boolean, doorRequested: boolean): number {
-  if ((phase === 'pickup' && elapsed > 0.2) || (phase === 'boarded' && !belted)) return 1;
+/** The curb door opens once the cab has stopped, and stays open until the rider buckles. */
+export function doorTarget(phase: string, _elapsed: number, belted: boolean, doorRequested: boolean, atCurb = false): number {
+  if (phase === 'pickup' || (phase === 'boarded' && !belted) || (phase === 'dispatch' && atCurb)) return 1;
   if ((phase === 'arrived' || phase === 'exited') && doorRequested) return 1;
   return 0;
 }

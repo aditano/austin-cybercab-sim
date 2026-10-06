@@ -865,7 +865,7 @@ function update(dt: number) {
     placeCab(dropoffDist, CURB_PULL);
     speedMps = 0;
   }
-  const wantDoor = doorTarget(phase, elapsed, belted, doorRequested);
+  const wantDoor = doorTarget(phase, elapsed, belted, doorRequested, phase === 'dispatch' && hold > 0);
   door = stepDoor(door, wantDoor, dt, reduceMotion);
   const curbRate = (appliedCurb - prevAppliedCurb) / Math.max(dt, 1e-4);
   prevAppliedCurb = appliedCurb;
