@@ -48,10 +48,12 @@ footer{bottom:max(29px,env(safe-area-inset-bottom));left:max(42px,env(safe-area-
   .phone-content{padding:8px 14px 12px}
   .location{display:none}
 }
-@media(max-height:520px){
+@media(max-height:520px),(max-width:400px){
   .chapter{display:none!important}
   .phone .map,.phone .micro,.phone .route-card,.phone-sub{display:none}
   .phone h2{font-size:18px;margin:2px 0}
   .fare{margin:8px 0}
   .geo-note{margin-bottom:6px}
+  #phone-body{display:flex;flex-direction:column}
+  #request,#enter{order:-1;margin-bottom:8px}
 }

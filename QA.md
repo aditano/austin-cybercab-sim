@@ -85,4 +85,32 @@ Not adopted, and why:
 
 | # | Status |
 | --- | --- |
-| 1–18 | Open at the time of this audit. Updated in the fix commits. |
+| 1 | Fixed. The curb door uses the builder’s local-Y swing (±1.95 rad). Open-door span stays near 2.1 m and the top of the door rises. |
+| 2 | Fixed. The cabin eye sits in front of the seat backs. Windshield and door glass are hidden only in that view, because transmission reads as a black shell from the inside. Chase and pickup still show the glass. |
+| 3 | Fixed. The speedometer sits on the left. Overlap with the phone at 1440×900 is under 50 px². |
+| 4 | Fixed. On a short or narrow viewport the phone fits the screen and Confirm is the first control. Checked at 320×568 and 844×390. |
+| 5 | Fixed. Coarse pointers get a thumbstick after Walk the block, and an on-screen Phone button. Under 800 px the phone hides while the cabin panel is up. |
+| 6 | Fixed. A destination select disables Confirm for Round Rock (outside the ring) and allows Congress and the airport. |
+| 7 | Fixed. Cancel ride is on the arrival screen and returns to explore. |
+| 8 | Fixed. An HTML loading shell paints before the module, and the city build yields once so that shell can update. |
+| 9 | Fixed. A stop only lowers the target speed. Pedestrians do not start a crossing into the cab and abort if it closes in. |
+| 10 | Fixed. The in-progress trip is stored in `sessionStorage` and restored in the same tab. |
+| 11 | Fixed. P during the ride does not hide the arrival phone. |
+| 12 | Fixed. The ride timer updates the ETA and the map dot instead of rebuilding the cabin DOM. |
+| 13 | Fixed. `austin.json` is fetched once and shared. |
+| 14 | Fixed. Map zoom buttons share a class. The duplicate id is gone. |
+| 15 | Fixed. Reduced motion snaps the door and the camera and skips water and pedestrian swing. Fullscreen failures toast instead of rejecting. |
+| 16 | Fixed. Phone secondary copy is `#3e4a44` on `#f6f7f2`. HUD labels have a text shadow. |
+| 17 | Fixed. Touch and software GL start on performance. Pixel ratio and shadow maps are capped (ultra shadows 2048 desktop / 1024 coarse). iOS asks for the default power preference. A lost WebGL context shows a reload panel. |
+| 18 | Fixed. The fare name does not wrap into the estimate. |
+| 19–24 | Still hold. Ride-flow and the new experience checks passed after the fixes. |
+
+Left on purpose:
+
+- WebGPU and a streamed city. The downtown extract already fits in memory.
+- Recompressing CC0 maps to lossy WebP. Normal maps were left as shipped.
+- A photoreal car pass. The owner kept the current model.
+- Walking is limited to a band beside the cab lane so the camera does not enter buildings.
+- SwiftShader frame time is not a laptop or phone figure. The audit’s cold 1440×900 frame was about 894 ms. A later `advanceTime(32)` after load returned in about 40 ms of wall time on the same software renderer. Neither number is a discrete-GPU frame time.
+- GitHub Pages still caches unhashed public files for `max-age=600`. Hashed bundles change name when the build changes.
+- Heap across a multi-minute idle loop was not sampled with the renderer running. With the loop paused, a full ride and a second load produced no page errors and no console errors.
