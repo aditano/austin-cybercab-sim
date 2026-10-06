@@ -1,13 +1,13 @@
 import * as THREE from 'three';
-import { createPedestrian, createStreetCar, type StreetKind } from './vehicle';
+import { createPedestrian, createStreetCar } from './vehicle';
+import { kindFromIndex, type SpawnedPerson, type StreetAssets } from './assets';
 import { ROAD_Y } from './geo';
-import { stepPedestrian } from './logic';
+import { stepPedestrian, streetBudget, type Quality } from './logic';
 
 export type LightPhase = 'green' | 'yellow' | 'red';
 
 const CYCLE = 22;
-const paints = [0xe8e4dc, 0x2f3840, 0x8a3b32, 0xc9c3b6, 0x4a5c62, 0xdfe3e0, 0x1e2428, 0x6b7180];
-const kinds: StreetKind[] = ['sedan', 'suv', 'van', 'pickup'];
+const paints = [0xe8e4dc, 0x2f3840, 0x8a3b32, 0xc9c3b6, 0x4a5c62, 0xdfe3e0, 0x1e2428, 0x6b7180, 0xbf5700, 0x243026];
 /** Offsets from the Cybercab travel lane (already ~4.7 m east of OSM centerline). */
 const OFFSET = { sidewalk: 5.7, park: 3.8, follow: 0, pass: -3.4, oppPark: -8.4, oppWalk: -10.6, pole: 6.5 };
 
@@ -24,7 +24,7 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
   scene.add(root);
 
   const signals: { lamps: THREE.MeshStandardMaterial[]; distance: number }[] = [];
-  const crossings = [0.18, 0.42, 0.68].map(f => f * routeLength);
+  const crossings = [0.18, 0.42, 0.68].map((f) => f * routeLength);
 
   function sample(d: number) {
     let i = 1;
@@ -68,35 +68,62 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
   }
 
   type Car = { mesh: THREE.Object3D; dist: number; lane: number; speed: number };
+  type Ped = { mesh: THREE.Object3D; dist: number; side: number; crossing: boolean; t: number; seed: number; person: SpawnedPerson | null };
   const cars: Car[] = [];
-  for (let i = 0; i < 6; i++) {
-    const mesh = createStreetCar(kinds[i % kinds.length], paints[i % paints.length]);
-    root.add(mesh);
-    cars.push({ mesh, dist: 40 + (i / 6) * routeLength, lane: OFFSET.pass, speed: 6.5 + (i % 3) });
-  }
-
-  type Ped = { mesh: THREE.Object3D; dist: number; side: number; crossing: boolean; t: number; seed: number };
   const peds: Ped[] = [];
-  for (let i = 0; i < 10; i++) {
-    const mesh = createPedestrian(i + 3);
-    root.add(mesh);
-    peds.push({ mesh, dist: (i / 10) * routeLength, side: i % 2 === 0 ? 1 : -1, crossing: false, t: 0, seed: i });
-  }
-
-  for (let i = 0; i < 10; i++) {
-    const mesh = createStreetCar(kinds[(i + 1) % kinds.length], paints[(i + 3) % paints.length]);
-    const { position, heading } = sample((i + 0.8) / 12 * routeLength);
-    const across = acrossOf(heading);
-    const east = i % 2 === 0;
-    mesh.position.copy(position).addScaledVector(across, east ? OFFSET.park : OFFSET.oppPark);
-    mesh.position.y = ROAD_Y;
-    mesh.rotation.y = heading + (east ? 0 : Math.PI);
-    root.add(mesh);
-  }
+  const parked: THREE.Object3D[] = [];
 
   const colors = [0x32d46a, 0xf0c43a, 0xff3b30];
   let time = 0;
   const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function clearGroup(items: THREE.Object3D[]) {
+    for (const mesh of items) root.remove(mesh);
+    items.length = 0;
+  }
+
+  function populate(assets: StreetAssets | null, quality: Quality) {
+    for (const car of cars) root.remove(car.mesh);
+    cars.length = 0;
+    for (const ped of peds) root.remove(ped.mesh);
+    peds.length = 0;
+    clearGroup(parked);
+    const budget = streetBudget(quality);
+    for (let i = 0; i < budget.movingCars; i++) {
+      const mesh = assets
+        ? assets.spawnCar(kindFromIndex(i), paints[i % paints.length])
+        : createStreetCar(['sedan', 'suv', 'van', 'pickup'][i % 4] as 'sedan', paints[i % paints.length]);
+      root.add(mesh);
+      cars.push({
+        mesh,
+        dist: 40 + (i / Math.max(1, budget.movingCars)) * routeLength,
+        lane: i % 3 === 0 ? OFFSET.follow : OFFSET.pass,
+        speed: 6.5 + (i % 3),
+      });
+    }
+    for (let i = 0; i < budget.peds; i++) {
+      const person = assets ? assets.spawnPerson(i + 3, quality) : null;
+      const mesh = person?.group ?? createPedestrian(i + 3);
+      root.add(mesh);
+      peds.push({
+        mesh, dist: (i / Math.max(1, budget.peds)) * routeLength,
+        side: i % 2 === 0 ? 1 : -1, crossing: false, t: 0, seed: i, person,
+      });
+    }
+    for (let i = 0; i < Math.min(10, budget.parked); i++) {
+      const mesh = assets
+        ? assets.spawnCar(kindFromIndex(i + 4), paints[(i + 3) % paints.length])
+        : createStreetCar(['sedan', 'suv', 'van', 'pickup'][i % 4] as 'sedan', paints[(i + 3) % paints.length]);
+      const { position, heading } = sample((i + 0.8) / 12 * routeLength);
+      const across = acrossOf(heading);
+      const east = i % 2 === 0;
+      mesh.position.copy(position).addScaledVector(across, east ? OFFSET.park : OFFSET.oppPark);
+      mesh.position.y = ROAD_Y;
+      mesh.rotation.y = heading + (east ? 0 : Math.PI);
+      root.add(mesh);
+      parked.push(mesh);
+    }
+  }
 
   function cabBlocked(cabDist: number, cabSpeed: number): { stop: boolean; stopDist: number; phase: LightPhase } {
     let stopDist = 1e9;
@@ -125,6 +152,10 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
   }
 
   return {
+    populate,
+    objects(): THREE.Object3D[] {
+      return [...cars.map((c) => c.mesh), ...parked];
+    },
     update(dt: number, cabDist: number, cabSpeed = 8) {
       time += dt;
       for (const signal of signals) {
@@ -138,10 +169,10 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
       }
       for (const car of cars) {
         const phase = lightAt(time, 0);
-        const near = crossings.find(d => car.dist < d && d - car.dist < 14);
+        const near = crossings.find((d) => car.dist < d && d - car.dist < 14);
         let speed = car.speed;
         if (near && (phase === 'red' || phase === 'yellow')) speed = 0;
-        const ahead = cars.filter(o => o !== car && Math.abs(o.lane - car.lane) < 0.2 && o.dist > car.dist).sort((a, b) => a.dist - b.dist)[0];
+        const ahead = cars.filter((o) => o !== car && Math.abs(o.lane - car.lane) < 0.2 && o.dist > car.dist).sort((a, b) => a.dist - b.dist)[0];
         if (ahead && ahead.dist - car.dist < 10) speed = Math.min(speed, Math.max(0, ahead.dist - car.dist - 6));
         if (Math.abs(car.lane - OFFSET.follow) < 0.2 && cabDist > car.dist && cabDist - car.dist < 10) speed = Math.min(speed, Math.max(0, cabDist - car.dist - 6));
         car.dist += speed * dt;
@@ -153,9 +184,11 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
         car.mesh.position.copy(position).addScaledVector(acrossOf(heading), car.lane);
         car.mesh.position.y = ROAD_Y;
         car.mesh.rotation.y = heading;
+        const wheels = car.mesh.userData.wheels as THREE.Object3D[] | undefined;
+        if (wheels) for (const wheel of wheels) wheel.rotation.x -= speed * dt / 0.33;
       }
       for (const ped of peds) {
-        const nearCross = crossings.find(d => Math.abs(d - ped.dist) < 6);
+        const nearCross = crossings.find((d) => Math.abs(d - ped.dist) < 6);
         const phase = lightAt(time, 0);
         const stepped = stepPedestrian(ped, {
           dt,
@@ -178,11 +211,18 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
         ped.mesh.position.copy(position).addScaledVector(acrossOf(heading), side);
         ped.mesh.position.y = ROAD_Y;
         ped.mesh.rotation.y = ped.crossing ? heading + Math.PI / 2 * Math.sign(from - to) : heading;
-        const swing = reduceMotion ? 0 : Math.sin((time + ped.seed) * 6.5) * (ped.crossing ? 0.35 : 0.55);
-        ped.mesh.getObjectByName('legL')?.rotation.set(swing, 0, 0);
-        ped.mesh.getObjectByName('legR')?.rotation.set(-swing, 0, 0);
-        ped.mesh.getObjectByName('armL')?.rotation.set(-swing * 0.7, 0, 0);
-        ped.mesh.getObjectByName('armR')?.rotation.set(swing * 0.7, 0, 0);
+        if (ped.person) {
+          const moving = !reduceMotion;
+          ped.person.walk.setEffectiveWeight(moving ? 1 : 0);
+          ped.person.idle.setEffectiveWeight(moving ? 0 : 1);
+          ped.person.mixer.update(dt);
+        } else {
+          const swing = reduceMotion ? 0 : Math.sin((time + ped.seed) * 6.5) * (ped.crossing ? 0.35 : 0.55);
+          ped.mesh.getObjectByName('legL')?.rotation.set(swing, 0, 0);
+          ped.mesh.getObjectByName('legR')?.rotation.set(-swing, 0, 0);
+          ped.mesh.getObjectByName('armL')?.rotation.set(-swing * 0.7, 0, 0);
+          ped.mesh.getObjectByName('armR')?.rotation.set(swing * 0.7, 0, 0);
+        }
       }
       return cabBlocked(cabDist, cabSpeed);
     },

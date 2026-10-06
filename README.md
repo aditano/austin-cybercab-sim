@@ -34,7 +34,7 @@ The app runs in the browser on Windows, macOS, and Linux when the browser and gr
 - Drag on the 3D view to look around. On a phone, **Walk the block** reveals a thumbstick; drag the scene to look.
 - Use **W A S D** to walk along the avenue. Walking stays in a band beside the cab lane so the camera does not enter buildings.
 - Press **P** to show or hide the request phone, or use the on-screen **Phone** button. **F** toggles fullscreen. **P** is ignored while the cab is moving; the phone returns at arrival.
-- Use the top-right graphics button to cycle balanced, cinematic, ultra, and performance. Balanced is the default on a desktop GPU. Touch screens and software renderers start on performance. If frames run long, the preset steps down once. Ultra uses a 2048 shadow map on desktop and 1024 on a coarse pointer.
+- Use the top-right graphics button to open Low, Medium, High, Ultra, or Auto. Auto is the default: it picks a preset from this device, then eases up or down from measured frame time. Touch screens and software renderers stay on Low. Low uses lighter street models (Kenney props, fewer cars and people). High and Ultra swap nearby furniture for Poly Haven scans, cascade shadows, and reflection probes; Ultra can add screen-space reflections. Your choice is saved in this browser.
 - On the phone, pick a destination. Places outside the approximated service area disable Confirm. Confirm a ride, match the violet Megalamp and plate, and choose **Enter** when the cab has stopped. **Cancel ride** is available at the curb as well as during dispatch.
 - In the cabin, choose **Fasten seatbelt**, then **Start Ride** after the doors close. During the ride, adjust the cabin temperature, toggle the generated ambient tone, or pause and resume the trip. Refreshing keeps the in-progress trip in this tab.
 - At the destination, exit and choose **Take another ride** to repeat the experience.
@@ -43,13 +43,17 @@ The request, pickup, ride timing, estimated time, fare-like UI, cabin functions,
 
 ## Scope and accuracy
 
-The scene uses Three.js with a meshopt-compressed Cybercab glTF, Poly Haven CC0 textures, image-based lighting, and post-processing. It is not photogrammetry, a surveyed digital twin, or an Unreal Engine scene. Building shapes and heights are incomplete approximations. The Cybercab is an original subdivision-surface model built by `tools/cybercab/build.py`, with PBR paint, glass, and tires. It is not manufacturer CAD. The cabin and phone use original artwork.
+The scene uses Three.js with a meshopt-compressed Cybercab glTF, licensed Kenney / Mixamo / Poly Haven street assets, Poly Haven CC0 textures, image-based lighting, cascade shadows, and post-processing. It is not photogrammetry, a surveyed digital twin, or an Unreal Engine scene. Building shapes and heights are incomplete approximations. The Cybercab is an original subdivision-surface model built by `tools/cybercab/build.py`, with PBR paint, glass, and tires. It is not manufacturer CAD. Traffic cars, people, and street furniture are third-party CC0/CC-BY models documented in [docs/ASSETS.md](docs/ASSETS.md). The cabin and phone use original artwork.
 
 The bundled OpenStreetMap extract covers a compact downtown area around Congress Avenue, from the South Congress riverfront through northern downtown, and includes nearby streets, building footprints, and Lady Bird Lake shoreline. The simulated trip runs from Congress & 2nd to Congress & 7th and stays north of the lake; it does not cross the lake or model an Austin-wide route. OSM data is an input to the scene, not a live map feed or a Tesla service-area boundary. See [docs/RESEARCH.md](docs/RESEARCH.md) for source, extraction, and height-estimation details.
 
 ## Asset credits
 
 The Cybercab glTF in `public/models/cybercab.glb` is built by `tools/cybercab/build.py`: an original subdivision-surface mesh, meshopt-compressed. It is not manufacturer CAD and not a factory scan. A CC BY 4.0 Sketchfab scan by [Grass Grass Grass (@zwir3kk)](https://sketchfab.com/3d-models/tesla-cybercab-3d-model-45c25fd8442b45129e47be2e66449ca3) exists, but the download API requires a Sketchfab login, so that file is not bundled.
+
+## Street models
+
+See [docs/ASSETS.md](docs/ASSETS.md) for source URLs and licenses for traffic cars (Kenney Car Kit, CC0), walking people (Mixamo rigs via three.js examples), and street props (Kenney City Kit + Poly Haven CC0). The Cybercab glTF is original to this repo and is not replaced by those kits.
 
 Environment images are [CC0](https://polyhaven.com/license) from [Poly Haven](https://polyhaven.com/):
 

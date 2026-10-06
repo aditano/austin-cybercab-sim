@@ -1,7 +1,9 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CAPITOL, ROAD_Y } from './geo';
-import { createStreetCar, type StreetKind } from './vehicle';
+import type { StreetAssets, PropKind } from './assets';
+import { kindFromIndex } from './assets';
+import { streetBudget, type Quality } from './logic';
 
 type Feature = { id?:number; name?:string; kind?:string; height?:number; levels?:number; lanes?:number; coordinates:number[][] };
 type MapData = { roads:Feature[]; buildings:Feature[]; water:Feature[] };
@@ -20,7 +22,14 @@ export function loadMapData(): Promise<MapData> {
   return mapDataPromise;
 }
 
-export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void): {update(dt:number):void; ready: Promise<void>; city: THREE.Group} {
+type StreetSpot = { kind: PropKind | 'park'; x: number; z: number; yaw: number; seed: number };
+
+export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void): {
+  update(dt:number):void;
+  ready: Promise<void>;
+  city: THREE.Group;
+  dress(assets: StreetAssets, quality: Quality): THREE.Object3D[];
+} {
   const root=new THREE.Group(); root.name='Austin · geographic city'; scene.add(root);
   const city=new THREE.Group(); root.add(city);
   const loading = new THREE.LoadingManager();
@@ -143,6 +152,8 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       parent.add(leaf);
     }
   }
+  const streetSpots:StreetSpot[]=[];
+  const dressed=new THREE.Group(); dressed.name='street-models';
   let junctions:THREE.Vector2[]=[];
   function nearJunction(p:THREE.Vector2,radius=15) {return junctions.some(j=>j.distanceToSquared(p)<radius*radius);}
   function road(parent:THREE.Object3D,f:Feature) {
@@ -164,17 +175,21 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
         if(major)for(const side of [-1,1])strip(parent,center.clone().addScaledVector(normal,side*.17),end.clone().addScaledVector(normal,side*.17),.10,.165,gold,.012);
         if(Math.floor((travelled+d)/12)%2===0)for(const offset of major?[-width*.25,width*.25]:[0])strip(parent,center.clone().addScaledVector(normal,offset),end.clone().addScaledVector(normal,offset),.12,.165,stripe,.012);
       }
-      if(major)for(let d=12;d<len-8;d+=42) {
+      if(major)for(let d=12;d<len-8;d+=28) {
         const v=a.clone().addScaledVector(direction,d).addScaledVector(normal,width*.5+4.4);
         if(nearJunction(v,22))continue;
-        // Street tree wells, slim light poles and benches make the curb read at human scale.
-        box(parent,v.x,.09,v.y,2.1,.16,2.1,lawn);tree(parent,v.x,v.y,d+i*12);
+        const yaw=Math.atan2(-direction.y,direction.x);
+        const seed=d+i*12;
+        box(parent,v.x,.09,v.y,2.1,.16,2.1,lawn);
+        streetSpots.push({kind:'tree',x:v.x,z:v.y,yaw,seed});
         const p=a.clone().addScaledVector(direction,d+12).addScaledVector(normal,width*.5+1.1);
-        box(parent,p.x,4.3,p.y,.13,8.6,.13,metal);
-        box(parent,p.x-normal.x*.75,8.6,p.y-normal.y*.75,1.6,.12,.32,metal,Math.atan2(-normal.y,normal.x));
+        streetSpots.push({kind:'lamp',x:p.x,z:p.y,yaw:Math.atan2(-normal.y,normal.x),seed:seed+3});
         const seat=v.clone().addScaledVector(direction,4);
-        box(parent,seat.x,.55,seat.y,1.8,.12,.6,benchWood,Math.atan2(-direction.y,direction.x));
-        box(parent,seat.x,.92,seat.y+.26,1.8,.55,.10,benchWood,Math.atan2(-direction.y,direction.x));
+        streetSpots.push({kind:'bench',x:seat.x,z:seat.y,yaw,seed:seed+7});
+        if(Math.floor(d/28)%3===0) streetSpots.push({kind:'planter',x:v.x+normal.x*1.6,z:v.y+normal.y*1.6,yaw,seed:seed+9});
+        if(Math.floor(d/28)%4===1) streetSpots.push({kind:'hydrant',x:p.x+normal.x*0.6,z:p.y+normal.y*0.6,yaw,seed:seed+11});
+        if(Math.floor(d/28)%5===2) streetSpots.push({kind:'trash',x:seat.x-direction.x*2.2,z:seat.y-direction.y*2.2,yaw,seed:seed+13});
+        if(Math.floor(d/28)%7===0) streetSpots.push({kind:'stop',x:p.x+normal.x*0.2,z:p.y+normal.y*0.2,yaw,seed:seed+15});
       }
       travelled+=len;
     }
@@ -255,24 +270,19 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       box(parent,corner.x+along.x*3,.28,corner.y+along.y*3,1,.55,1,curb);
     }
   }
-  function parkedTraffic(parent:THREE.Object3D,roads:Feature[]) {
+  function parkedTraffic(roads:Feature[]) {
     const positions:THREE.Vector2[]=[];
-    const kinds:StreetKind[]=['sedan','suv','pickup','sedan','van','suv'];
-    const paints=[0xe8e4dc,0x2c3338,0x8d3a32,0x1e2428,0xd7d3c8,0x4d5960,0x6b7180,0xc9c3b6];
     for(const r of roads) {
       if(!/Congress Avenue|[EW].*2nd Street/.test(r.name||''))continue;
       const pts=r.coordinates.map(point);const major=/Congress/.test(r.name||'');const width=major?Math.max(14,Math.min(23,(r.lanes||4)*3.3)):9;
       for(let i=1;i<pts.length;i++) {
         const a=pts[i-1],b=pts[i],length=a.distanceTo(b);if(length<30)continue;
         const direction=b.clone().sub(a).normalize(),normal=new THREE.Vector2(-direction.y,direction.x);
-        for(let t=20;t<length-10;t+=64) {
+        for(let t=20;t<length-10;t+=48) {
           const c=a.clone().addScaledVector(direction,t).addScaledVector(normal,width/2+0.9);
-          if(c.length()>620||nearJunction(c,26)||positions.some(p=>p.distanceTo(c)<16)||positions.length>=10)continue;
-          const index=positions.length;positions.push(c);
-          const mesh=createStreetCar(kinds[index%kinds.length],paints[index%paints.length]);
-          mesh.position.set(c.x,ROAD_Y,c.y);
-          mesh.rotation.y=Math.atan2(-direction.x,-direction.y);
-          parent.add(mesh);
+          if(c.length()>620||nearJunction(c,26)||positions.some(p=>p.distanceTo(c)<16)||positions.length>=16)continue;
+          positions.push(c);
+          streetSpots.push({kind:'park',x:c.x,z:c.y,yaw:Math.atan2(-direction.x,-direction.y),seed:positions.length});
         }
       }
     }
@@ -355,6 +365,8 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
   }
   function render(data:MapData) {
     city.clear();
+    streetSpots.length=0;
+    dressed.clear();
     const nodes=new Map<string,{point:THREE.Vector2,names:Set<string>}>();
     for(const r of data.roads||[]) {
       if(/footway|path|cycleway|pedestrian|service/.test(r.kind||''))continue;
@@ -368,7 +380,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     (data.buildings||[]).forEach((b,i)=>building(city,b,i));
     (data.roads||[]).forEach(r=>road(city,r));
     streetIntersection(city,point([-97.7442121,30.2643199]));
-    parkedTraffic(city,data.roads||[]);
+    parkedTraffic(data.roads||[]);
     // Congress bridge balustrades and regular concrete piers, aligned to the street.
     for(const side of [-1,1])for(let z=150;z<435;z+=4) {
       const x=60-z*.3+side*12;box(city,x,.7,z,.28,1.2,.28,pavement);
@@ -379,7 +391,8 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     for(let i=0;i<115;i++) {
       const x=-1400+i*25,z=180+x*.15;
       if(Math.abs(x-(20-z*.3))<35)continue;
-      tree(city,x,z-40-seeded(i)*20,i*3);tree(city,x,z+210+seeded(i*8)*20,i*7);
+      streetSpots.push({kind:'tree',x,z:z-40-seeded(i)*20,yaw:seeded(i)*Math.PI*2,seed:i*3});
+      streetSpots.push({kind:'tree',x,z:z+210+seeded(i*8)*20,yaw:seeded(i*11)*Math.PI*2,seed:i*7});
     }
     for(let i=0;i<22;i++) {
       const x=-700+i*62,z=365+x*.15;
@@ -424,8 +437,72 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       if(merged){meshes.forEach(mesh=>city.remove(mesh));const mesh=new THREE.Mesh(merged,material);mesh.castShadow=material.userData.castShadow!==false;mesh.receiveShadow=true;city.add(mesh);}
     }
     dressLandmarks(city,data);
+    city.add(dressed);
   }
   const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const dummy = new THREE.Object3D();
+  function dress(assets: StreetAssets, quality: Quality): THREE.Object3D[] {
+    dressed.clear();
+    const budget = streetBudget(quality);
+    const paints = [0xe8e4dc, 0x2c3338, 0x8d3a32, 0x1e2428, 0xd7d3c8, 0x4d5960, 0x6b7180, 0xc9c3b6, 0xbf5700, 0xdfe3e0];
+    const origin = new THREE.Vector2(165, -300);
+    const keep = (spot: StreetSpot, far: number) => origin.distanceTo(new THREE.Vector2(spot.x, spot.z)) < far;
+    const stride = Math.max(1, Math.round(budget.treeStride / 28));
+    const trees = streetSpots.filter((s) => s.kind === 'tree').filter((_, i) => i % stride === 0);
+    const treeScale = assets.propScale('tree', quality);
+    const treeMesh = assets.instanceProp('tree', quality, trees.length);
+    if (treeMesh && treeScale) {
+      trees.forEach((spot, i) => {
+        dummy.position.set(spot.x, treeScale.lift, spot.z);
+        dummy.rotation.set(0, spot.yaw, 0);
+        dummy.scale.setScalar(treeScale.scale * (0.86 + seeded(spot.seed) * 0.32));
+        dummy.updateMatrix();
+        treeMesh.setMatrixAt(i, dummy.matrix);
+      });
+      treeMesh.instanceMatrix.needsUpdate = true;
+      dressed.add(treeMesh);
+    } else {
+      trees.forEach((spot) => tree(dressed, spot.x, spot.z, spot.seed));
+    }
+    const instanceKinds: PropKind[] = ['lamp', 'planter', 'stop', 'pole', 'cone', 'dumpster', 'signal', 'street-sign', 'warn'];
+    for (const kind of instanceKinds) {
+      const spots = streetSpots.filter((s) => s.kind === kind && keep(s, budget.propFar));
+      if (!spots.length) continue;
+      const metrics = assets.propScale(kind, quality);
+      const mesh = assets.instanceProp(kind, quality, spots.length);
+      if (mesh && metrics) {
+        spots.forEach((spot, i) => {
+          dummy.position.set(spot.x, metrics.lift, spot.z);
+          dummy.rotation.set(0, spot.yaw, 0);
+          dummy.scale.setScalar(metrics.scale);
+          dummy.updateMatrix();
+          mesh.setMatrixAt(i, dummy.matrix);
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+        dressed.add(mesh);
+      }
+    }
+    const unique: PropKind[] = ['bench', 'hydrant', 'trash'];
+    for (const kind of unique) {
+      streetSpots.filter((s) => s.kind === kind && keep(s, budget.scans ? budget.propFar : Math.min(90, budget.propFar))).forEach((spot) => {
+        const model = assets.spawnProp(kind, quality);
+        if (!model) return;
+        model.position.set(spot.x, 0, spot.z);
+        model.rotation.y = spot.yaw;
+        dressed.add(model);
+      });
+    }
+    const parks = streetSpots.filter((s) => s.kind === 'park').slice(0, budget.parked);
+    const cars: THREE.Object3D[] = [];
+    parks.forEach((spot, i) => {
+      const mesh = assets.spawnCar(kindFromIndex(i), paints[i % paints.length]);
+      mesh.position.set(spot.x, ROAD_Y, spot.z);
+      mesh.rotation.y = spot.yaw;
+      dressed.add(mesh);
+      cars.push(mesh);
+    });
+    return cars;
+  }
   const ready = (async () => {
     onStatus?.('Loading the map');
     let data: MapData | null = null;
@@ -440,6 +517,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
   return {
     city,
     ready,
+    dress,
     update(dt:number) {
       time += dt;
       if (!reduceMotion) waterMaterial.roughness = 0.19 + Math.sin(time * 0.3) * 0.025;

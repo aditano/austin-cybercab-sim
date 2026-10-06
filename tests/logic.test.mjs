@@ -47,17 +47,17 @@ test('pedestrians do not start a crossing into the cab', () => {
   assert.equal(abort.t, 0);
 });
 
-test('pixel ratio and shadows stay bounded on phones and software GL', () => {
-  assert.equal(defaultQuality({ software: true, coarse: false }), 'performance');
-  assert.equal(defaultQuality({ software: false, coarse: true }), 'performance');
-  assert.equal(defaultQuality({ software: false, coarse: false }), 'balanced');
+test('pixel ratio, shadows, Auto, and graphics persistence', () => {
+  assert.equal(defaultQuality({ software: true, coarse: false }), 'low');
+  assert.equal(defaultQuality({ software: false, coarse: true }), 'low');
+  assert.equal(defaultQuality({ software: false, coarse: false }), 'medium');
   assert.equal(pixelRatioFor(3, 'ultra', { software: true, coarse: false }), 1);
-  assert.equal(pixelRatioFor(3, 'performance', { software: false, coarse: false }), 1);
-  assert.equal(pixelRatioFor(3, 'balanced', { software: false, coarse: false }), 1.25);
+  assert.equal(pixelRatioFor(3, 'low', { software: false, coarse: false }), 1);
+  assert.equal(pixelRatioFor(3, 'medium', { software: false, coarse: false }), 1.25);
   assert.equal(pixelRatioFor(3, 'ultra', { software: false, coarse: true }), 1.25);
   assert.equal(pixelRatioFor(3, 'ultra', { software: false, coarse: false }), 1.75);
   assert.equal(pixelRatioFor(1, 'ultra', { software: false, coarse: false }), 1);
-  assert.equal(shadowMapSize('performance', false), 0);
+  assert.equal(shadowMapSize('low', false), 0);
   assert.equal(shadowMapSize('ultra', true), 1024);
   assert.equal(shadowMapSize('ultra', false), 2048);
 });
