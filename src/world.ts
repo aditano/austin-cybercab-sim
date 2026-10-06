@@ -11,24 +11,25 @@ const seeded = (n:number) => { let x=Math.sin(n*127.1+311.7)*43758.5453123; retu
 export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
   const root=new THREE.Group(); root.name='Austin · geographic city'; scene.add(root);
   const city=new THREE.Group(); root.add(city);
-  function surfaceTexture(kind:'asphalt'|'stone') {
-    const canvas=document.createElement('canvas');canvas.width=canvas.height=256;
-    const ctx=canvas.getContext('2d')!;const pixels=ctx.createImageData(256,256);
-    for(let i=0;i<256*256;i++) {
-      const grain=seeded(i+ (kind==='asphalt'?10:90));const value=kind==='asphalt'?88+grain*42:190+grain*30;
-      pixels.data.set([value,value,kind==='asphalt'?value+2:value-7,255],i*4);
-    }
-    ctx.putImageData(pixels,0,0);
-    if(kind==='asphalt') {ctx.strokeStyle='rgba(30,33,35,.27)';ctx.lineWidth=.6;for(let i=0;i<9;i++){ctx.beginPath();ctx.moveTo(seeded(i)*256,seeded(i+50)*256);ctx.lineTo(seeded(i+5)*256,seeded(i+63)*256);ctx.stroke();}}
-    else {ctx.strokeStyle='rgba(105,101,94,.25)';ctx.lineWidth=1;ctx.strokeRect(.5,.5,255,255);ctx.strokeRect(.5,128,255,128);}
-    const texture=new THREE.CanvasTexture(canvas);texture.wrapS=texture.wrapT=THREE.RepeatWrapping;texture.colorSpace=THREE.SRGBColorSpace;texture.anisotropy=8;return texture;
+  function mapTexture(file:string, srgb:boolean) {
+    const texture=new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/${file}`);
+    texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
+    texture.anisotropy=8;
+    texture.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;
+    return texture;
   }
-  const asphaltTexture=surfaceTexture('asphalt'),stoneTexture=surfaceTexture('stone');
-  // Sampling in world metres keeps grain consistent across all merged road segments.
-  function texturedMaterial(color:number,texture:THREE.Texture,scale:number,roughness:number,physical=false) {
+  const asphaltDiff=mapTexture('asphalt_diff.jpg',true),asphaltNor=mapTexture('asphalt_nor.jpg',false),asphaltRough=mapTexture('asphalt_rough.jpg',false);
+  const wallDiff=mapTexture('wall_diff.jpg',true),wallNor=mapTexture('wall_nor.jpg',false),wallRough=mapTexture('wall_rough.jpg',false);
+  const concreteDiff=mapTexture('concrete_diff.jpg',true),concreteNor=mapTexture('concrete_nor.jpg',false),concreteRough=mapTexture('concrete_rough.jpg',false);
+  const barkDiff=mapTexture('bark_diff.jpg',true),barkNor=mapTexture('bark_nor.jpg',false);
+  const leavesDiff=mapTexture('leaves_diff.jpg',true),leavesAlpha=mapTexture('leaves_alpha.png',false);
+  // World-space triplanar sampling so instanced road boxes and extruded walls share one texel size.
+  function texturedMaterial(color:number,diffuse:THREE.Texture,normal:THREE.Texture,rough:THREE.Texture,scale:number,roughness:number,physical=false) {
     const material=physical
-      ? new THREE.MeshPhysicalMaterial({color,map:texture,roughness,metalness:.16,envMapIntensity:1.05,clearcoat:.18,clearcoatRoughness:.45})
-      : new THREE.MeshStandardMaterial({color,map:texture,roughness});
+      ? new THREE.MeshPhysicalMaterial({color,map:diffuse,normalMap:normal,roughnessMap:rough,roughness,metalness:.04,envMapIntensity:.42,clearcoat:.06,clearcoatRoughness:.4})
+      : new THREE.MeshStandardMaterial({color,map:diffuse,normalMap:normal,roughnessMap:rough,roughness,metalness:.02,envMapIntensity:.35});
+    const scaleLit=scale.toFixed(4);
+    material.normalScale=new THREE.Vector2(physical?0.85:0.55,physical?0.85:0.55);
     material.onBeforeCompile=shader=>{
       shader.vertexShader='varying vec3 vSurfacePosition;\n'+shader.vertexShader;
       shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
@@ -39,29 +40,53 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
         vSurfacePosition=(modelMatrix*surfacePosition).xyz;`);
       shader.fragmentShader='varying vec3 vSurfacePosition;\n'+shader.fragmentShader;
       shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`#ifdef USE_MAP
-        vec3 n=abs(normalize(cross(dFdx(vSurfacePosition),dFdy(vSurfacePosition))));
-        vec2 surfaceUV=n.y>n.x&&n.y>n.z?vSurfacePosition.xz:(n.x>n.z?vSurfacePosition.zy:vSurfacePosition.xy);
-        diffuseColor*=texture2D(map,surfaceUV*${scale.toFixed(4)});
+        vec3 triBlend=pow(abs(normalize(cross(dFdx(vSurfacePosition),dFdy(vSurfacePosition)))),vec3(4.0));
+        triBlend/=triBlend.x+triBlend.y+triBlend.z;
+        vec2 uvX=vSurfacePosition.zy*${scaleLit};
+        vec2 uvY=vSurfacePosition.xz*${scaleLit};
+        vec2 uvZ=vSurfacePosition.xy*${scaleLit};
+        diffuseColor*=texture2D(map,uvX)*triBlend.x+texture2D(map,uvY)*triBlend.y+texture2D(map,uvZ)*triBlend.z;
+        #endif`);
+      shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>',`float roughnessFactor=roughness;
+        #ifdef USE_ROUGHNESSMAP
+          vec3 roughBlend=pow(abs(normalize(cross(dFdx(vSurfacePosition),dFdy(vSurfacePosition)))),vec3(4.0));
+          roughBlend/=roughBlend.x+roughBlend.y+roughBlend.z;
+          roughnessFactor*=texture2D(roughnessMap,vSurfacePosition.zy*${scaleLit}).g*roughBlend.x
+            +texture2D(roughnessMap,vSurfacePosition.xz*${scaleLit}).g*roughBlend.y
+            +texture2D(roughnessMap,vSurfacePosition.xy*${scaleLit}).g*roughBlend.z;
+        #endif`);
+      shader.fragmentShader=shader.fragmentShader.replace('#include <normal_fragment_maps>',`#ifdef USE_NORMALMAP
+        vec3 normalBlend=pow(abs(normalize(cross(dFdx(vSurfacePosition),dFdy(vSurfacePosition)))),vec3(4.0));
+        normalBlend/=normalBlend.x+normalBlend.y+normalBlend.z;
+        vec3 tx=texture2D(normalMap,vSurfacePosition.zy*${scaleLit}).xyz*2.0-1.0;
+        vec3 ty=texture2D(normalMap,vSurfacePosition.xz*${scaleLit}).xyz*2.0-1.0;
+        vec3 tz=texture2D(normalMap,vSurfacePosition.xy*${scaleLit}).xyz*2.0-1.0;
+        vec3 mapped=normalize(vec3(tx.z,tx.y,tx.x)*normalBlend.x+vec3(ty.x,ty.z,ty.y)*normalBlend.y+vec3(tz.x,tz.y,tz.z)*normalBlend.z);
+        normal=normalize(mix(normal,mapped,.72));
         #endif`);
     };
-    material.customProgramCacheKey=()=>`world-surface-${scale}-${physical?1:0}`;return material;
+    material.customProgramCacheKey=()=>`world-pbr-${scaleLit}-${physical?1:0}`;
+    return material;
   }
-  const asphalt=texturedMaterial(0x4f5356,asphaltTexture,.18,.4,true);
-  const pavement=texturedMaterial(0xc4bcae,stoneTexture,.32,.91);
-  const curb=new THREE.MeshStandardMaterial({color:0xbab5a8,roughness:.88});
-  const metal=new THREE.MeshStandardMaterial({color:0x343b3b,metalness:.72,roughness:.32,envMapIntensity:.9});
-  const stripe=new THREE.MeshStandardMaterial({color:0xe8e4c8,roughness:0.55,envMapIntensity:.4});
-  const gold=new THREE.MeshStandardMaterial({color:0xd3ad61,roughness:0.55,metalness:.25});
-  const lawn=new THREE.MeshStandardMaterial({color:0x4e6840,roughness:.92});
-  const trunk=new THREE.MeshStandardMaterial({color:0x685849,roughness:1});
-  const foliage=new THREE.MeshStandardMaterial({color:0x3a5a3c,roughness:.78});
-  const leavesB=new THREE.MeshStandardMaterial({color:0x2f4a32,roughness:.82});
-  const waterMaterial=new THREE.MeshPhysicalMaterial({color:0x2a656c,metalness:0.62,roughness:0.14,transparent:true,opacity:0.93,envMapIntensity:1.45,clearcoat:1,clearcoatRoughness:.2});
-  const windowMaterial=new THREE.MeshPhysicalMaterial({color:0x3b555b,metalness:.55,roughness:.08,envMapIntensity:1.25});
-  const glassMaterials=[0x263c43,0x44616b,0x76918d,0x334954].map(color=>new THREE.MeshPhysicalMaterial({color,metalness:.62,roughness:.08,envMapIntensity:1.2}));
-  const frame=new THREE.MeshStandardMaterial({color:0x555d5c,metalness:.7,roughness:.32});
-  const litWindow=new THREE.MeshStandardMaterial({color:0xe9ce99,emissive:0xd6a55c,emissiveIntensity:0.55,roughness:0.35});
-  const buildingMaterials=[0xd5cbb9,0xb4b8b4,0xb9beb8,0xc4b29c,0x6f8286,0x8f9c9d].map(color=>texturedMaterial(color,stoneTexture,.17,.78));
+  const asphalt=texturedMaterial(0xffffff,asphaltDiff,asphaltNor,asphaltRough,.42,1,true);
+  const pavement=texturedMaterial(0xffffff,concreteDiff,concreteNor,concreteRough,.55,.96);
+  const curb=texturedMaterial(0xd7d2c8,concreteDiff,concreteNor,concreteRough,.7,.9);
+  const metal=new THREE.MeshStandardMaterial({color:0x3a4244,metalness:.82,roughness:.28,envMapIntensity:1.05});
+  const stripe=new THREE.MeshStandardMaterial({color:0xf4f0dc,roughness:0.42,metalness:.02,envMapIntensity:.35});
+  const gold=new THREE.MeshStandardMaterial({color:0xe0c27a,roughness:0.48,metalness:.18,envMapIntensity:.4});
+  const lawn=new THREE.MeshStandardMaterial({color:0x4d643c,roughness:.94});
+  const benchWood=new THREE.MeshStandardMaterial({map:barkDiff,color:0xc4b2a2,roughness:.88});
+  const trunkMat=new THREE.MeshStandardMaterial({map:barkDiff,normalMap:barkNor,color:0xffffff,roughness:.86,normalScale:new THREE.Vector2(.8,.8)});
+  const leafMat=new THREE.MeshStandardMaterial({
+    map:leavesDiff,alphaMap:leavesAlpha,alphaTest:.38,side:THREE.DoubleSide,roughness:.8,color:0xffffff,envMapIntensity:.2,
+  });
+  leafMat.userData.castShadow=false;
+  const waterMaterial=new THREE.MeshPhysicalMaterial({color:0x2a656c,metalness:0.55,roughness:0.08,transparent:true,opacity:0.92,envMapIntensity:1.7,clearcoat:1,clearcoatRoughness:.12});
+  const windowMaterial=new THREE.MeshPhysicalMaterial({color:0x8eafb6,metalness:.08,roughness:.04,envMapIntensity:1.85,clearcoat:1,clearcoatRoughness:.05,transparent:true,opacity:.78});
+  const glassMaterials=[0x6e8e98,0x7f9aa4,0x5e808c,0x89a8ae].map(color=>new THREE.MeshPhysicalMaterial({color,metalness:.2,roughness:.02,envMapIntensity:2.4,clearcoat:1,clearcoatRoughness:.04,transparent:true,opacity:.48}));
+  const frame=new THREE.MeshStandardMaterial({color:0x6a726f,metalness:.72,roughness:.3,envMapIntensity:1});
+  const litWindow=new THREE.MeshStandardMaterial({color:0xffe2b0,emissive:0xffc57a,emissiveIntensity:1.15,roughness:0.28});
+  const buildingMaterials=[0xf3efe4,0xe6dfd2,0xf7f1e6,0xddd4c6,0xd5dbd6,0xefe6d6].map(color=>texturedMaterial(color,wallDiff,wallNor,wallRough,.55,.84));
   const ground=new THREE.Mesh(new THREE.PlaneGeometry(12000,12000),new THREE.MeshStandardMaterial({color:0x7d8270,roughness:1})); ground.rotation.x=-Math.PI/2; ground.position.y=-0.02; ground.receiveShadow=true; root.add(ground);
   const boxGeometry=new THREE.BoxGeometry(1,1,1);
   function box(parent:THREE.Object3D,x:number,y:number,z:number,w:number,h:number,d:number,material:THREE.Material,rotation=0) {
@@ -76,21 +101,31 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
     const geo=new THREE.ExtrudeGeometry(shape,{depth:height,bevelEnabled:false});geo.rotateX(-Math.PI/2);
     const m=new THREE.Mesh(geo,material);m.position.y=base;m.castShadow=height>1;m.receiveShadow=true;parent.add(m);return {m,pts};
   }
-  const treeGeometry=new THREE.IcosahedronGeometry(1,2);
+  const leafCard=new THREE.PlaneGeometry(1,1);
+  const leafUv=leafCard.attributes.uv as THREE.BufferAttribute;
+  for(let i=0;i<leafUv.count;i++) leafUv.setXY(i,leafUv.getX(i)*0.5,0.12+leafUv.getY(i)*0.76);
   function tree(parent:THREE.Object3D,x:number,z:number,seed:number) {
-    const h=8.5+seeded(seed)*2.4;
-    box(parent,x,h*.46,z,.22,h*.92,.22,trunk);
-    const crown=new THREE.Mesh(treeGeometry,foliage);
-    crown.position.set(x,h+.35,z);
-    crown.scale.set(h*.62,h*.16,h*.55);
-    crown.rotation.y=seed;
-    crown.castShadow=true;
-    parent.add(crown);
-    const canopy=new THREE.Mesh(treeGeometry,leavesB);
-    canopy.position.set(x+h*.08,h-.15,z-h*.06);
-    canopy.scale.set(h*.4,h*.1,h*.36);
-    canopy.castShadow=true;
-    parent.add(canopy);
+    const h=7.6+seeded(seed)*2.8;
+    const trunkGeo=new THREE.CylinderGeometry(.18,.34,h*.62,7,1);
+    trunkGeo.translate(0,h*.31,0);
+    const trunkUv=trunkGeo.attributes.uv as THREE.BufferAttribute;
+    for(let i=0;i<trunkUv.count;i++) trunkUv.setXY(i,trunkUv.getX(i)*2,trunkUv.getY(i)*(h*.22));
+    const trunkMesh=new THREE.Mesh(trunkGeo,trunkMat);
+    trunkMesh.position.set(x,0,z);
+    trunkMesh.castShadow=true;
+    trunkMesh.receiveShadow=true;
+    parent.add(trunkMesh);
+    const crown=h*.72;
+    for(let i=0;i<11;i++) {
+      const leaf=new THREE.Mesh(leafCard,leafMat);
+      const ang=seeded(seed+i*17)*Math.PI*2;
+      const rad=(.25+seeded(seed+i*3)*.85)*(h*.38);
+      leaf.position.set(x+Math.cos(ang)*rad*.45,crown+(seeded(seed+i*5)-.45)*1.4,z+Math.sin(ang)*rad*.4);
+      leaf.scale.set(h*(.46+seeded(seed+i)*.2),h*(.26+seeded(seed+i*9)*.1),1);
+      leaf.rotation.set((seeded(seed+i*11)-.5)*.7,ang,(seeded(seed+i*13)-.5)*.4);
+      leaf.castShadow=false;
+      parent.add(leaf);
+    }
   }
   let junctions:THREE.Vector2[]=[];
   function nearJunction(p:THREE.Vector2,radius=15) {return junctions.some(j=>j.distanceToSquared(p)<radius*radius);}
@@ -122,8 +157,8 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
         box(parent,p.x,4.3,p.y,.13,8.6,.13,metal);
         box(parent,p.x-normal.x*.75,8.6,p.y-normal.y*.75,1.6,.12,.32,metal,Math.atan2(-normal.y,normal.x));
         const seat=v.clone().addScaledVector(direction,4);
-        box(parent,seat.x,.55,seat.y,1.8,.12,.6,trunk,Math.atan2(-direction.y,direction.x));
-        box(parent,seat.x,.92,seat.y+.26,1.8,.55,.10,trunk,Math.atan2(-direction.y,direction.x));
+        box(parent,seat.x,.55,seat.y,1.8,.12,.6,benchWood,Math.atan2(-direction.y,direction.x));
+        box(parent,seat.x,.92,seat.y+.26,1.8,.55,.10,benchWood,Math.atan2(-direction.y,direction.x));
       }
       travelled+=len;
     }
@@ -228,7 +263,7 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
   }
   function dressLandmarks(parent:THREE.Object3D,data:MapData) {
     const granite=new THREE.MeshStandardMaterial({color:0xd7b09a,roughness:.78});
-    const domeMat=new THREE.MeshStandardMaterial({color:0xc45c52,roughness:.62,metalness:.04,emissive:0x6a3028,emissiveIntensity:.55});
+    const domeMat=new THREE.MeshStandardMaterial({color:0xc45c52,roughness:.72,metalness:.06,emissive:0x4a2824,emissiveIntensity:.08});
     const statueMat=new THREE.MeshStandardMaterial({color:0xf6f1e8,roughness:.5});
     const lit=new THREE.MeshStandardMaterial({color:0xf0d2a0,emissive:0xffb45a,emissiveIntensity:.7});
     const crownGlass=new THREE.MeshPhysicalMaterial({color:0xb7d0d2,metalness:.55,roughness:.08,transparent:true,opacity:.84,envMapIntensity:1.3});
@@ -370,7 +405,7 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
       const geometries=meshes.map(mesh=>{mesh.updateMatrix();return mesh.geometry.clone().applyMatrix4(mesh.matrix);});
       const merged=mergeGeometries(geometries);
       geometries.forEach(geometry=>geometry.dispose());
-      if(merged){meshes.forEach(mesh=>city.remove(mesh));const mesh=new THREE.Mesh(merged,material);mesh.castShadow=true;mesh.receiveShadow=true;city.add(mesh);}
+      if(merged){meshes.forEach(mesh=>city.remove(mesh));const mesh=new THREE.Mesh(merged,material);mesh.castShadow=material.userData.castShadow!==false;mesh.receiveShadow=true;city.add(mesh);}
     }
     dressLandmarks(city,data);
   }
