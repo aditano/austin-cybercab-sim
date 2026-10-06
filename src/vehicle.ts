@@ -167,6 +167,8 @@ export async function loadCybercab() {
 
   const lod0 = named.get('lod0') ?? null;
   const lod1 = named.get('body-lod1') ?? null;
+  const windshield = named.get('windshield') ?? null;
+  const windshieldBezel = named.get('windshield-bezel') ?? null;
   if (lod1) lod1.visible = false;
 
   const doorSpins = (['r', 'l'] as const).map((suffix) => {
@@ -253,16 +255,26 @@ export async function loadCybercab() {
     },
     doorMetrics() {
       const mesh = named.get('door-r');
-      if (!mesh) return { lift: 0, span: 0 };
+      if (!mesh) return { lift: 0, top: 0, span: 0 };
       const box = new THREE.Box3().setFromObject(mesh);
       const size = box.getSize(new THREE.Vector3());
       const center = box.getCenter(new THREE.Vector3());
       return {
         lift: center.y - group.position.y,
+        top: box.max.y - group.position.y,
         span: Math.max(size.x, size.y, size.z),
       };
     },
     setLamp(mode: LampMode) { lampMode = mode; },
+    /** Glass transmission is opaque from inside the shell, so the rider view hides it. */
+    setCabinView(inside: boolean) {
+      if (windshield) windshield.visible = !inside;
+      if (windshieldBezel) windshieldBezel.visible = !inside;
+      for (const name of ['door-glass-l', 'door-glass-r', 'shade-l', 'shade-r']) {
+        const part = named.get(name);
+        if (part) part.visible = !inside;
+      }
+    },
     setHazards(on: boolean) { hazardsOn = on; },
     update(dt: number, speed: number, viewDistance = 8) {
       applyLamp(dt);

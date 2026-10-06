@@ -661,8 +661,9 @@ function updateCamera(dt: number) {
   switch (view) {
     case 'cabin': {
       // Seated between the headrests, low enough to see out the windshield.
-      cabinEye.set(0, 0.68, 0.42).applyMatrix4(cab.group.matrixWorld);
-      cabinLook.set(0, 0.62, -6).applyMatrix4(cab.group.matrixWorld);
+      // In front of the seat backs (local z ≈ 0.29) and above the dash screen.
+      cabinEye.set(0, 1.08, 0.12).applyMatrix4(cab.group.matrixWorld);
+      cabinLook.set(0, 0.82, -8).applyMatrix4(cab.group.matrixWorld);
       camera.position.copy(cabinEye);
       camera.up.set(0, 1, 0);
       camera.lookAt(cabinLook);
@@ -774,6 +775,7 @@ function update(dt: number) {
   const wantDoor = (phase === 'pickup' && elapsed > 0.35) || (phase === 'boarded' && !belted) || ((phase === 'arrived' || phase === 'exited') && doorRequested) ? 1 : 0;
   door = reduceMotion ? wantDoor : THREE.MathUtils.damp(door, wantDoor, 3.2, dt);
   cab.setDoor(door, 1);
+  cab.setCabinView(cam === 'cabin');
   cab.update(dt, speedMps, camera.position.distanceTo(cab.group.position));
   cab.group.updateMatrixWorld();
   updateCamera(dt);
@@ -806,7 +808,7 @@ function noteFrame(dt: number) {
 }
 function animate(now: number) {
   requestAnimationFrame(animate);
-  if (document.hidden) { last = now; return; }
+  if (document.hidden || window.__cybercabPause) { last = now; return; }
   const dt = Math.min((now - last) / 1000, 0.25);
   last = now;
   update(dt);
@@ -881,6 +883,7 @@ function mountCab(loaded: Cybercab) {
       cameraGap: Number(camera.position.distanceTo(cab.group.position).toFixed(2)),
       cameraLocal: localCam.toArray().map((n) => Number(n.toFixed(3))),
       doorLift: Number(doorBox.lift.toFixed(3)),
+      doorTop: Number(doorBox.top.toFixed(3)),
       doorSpan: Number(doorBox.span.toFixed(3)),
       speedMph: Math.round(speedMps * 2.23694),
     });

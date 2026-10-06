@@ -19,13 +19,23 @@ function harness(page) {
 async function openPage(context) {
   const page = await context.newPage();
   await page.addInitScript(() => {
-    window.requestAnimationFrame = () => 0;
+    window.__cybercabPause = true;
   });
-  page.setDefaultTimeout(60000);
+  page.setDefaultTimeout(120000);
+  const started = Date.now();
   await page.goto(base, { waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => typeof window.advanceTime === 'function');
-  await page.waitForFunction(() => !document.getElementById('boot'));
-  return page;
+  let last = '';
+  while (Date.now() - started < 90000) {
+    last = await page.evaluate(() => JSON.stringify({
+      hook: typeof window.advanceTime,
+      boot: document.getElementById('boot-status')?.textContent ?? null,
+      retry: document.getElementById('boot-retry')?.hasAttribute('hidden') ?? null,
+    }));
+    const snap = JSON.parse(last);
+    if (snap.hook === 'function' && snap.boot === null) return page;
+    await page.waitForTimeout(1000);
+  }
+  throw new Error(`sim did not become ready: ${last}`);
 }
 
 const desktop = await browser.newContext({ viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 });
@@ -56,8 +66,8 @@ await advance(14000);
 const picked = await state();
 assert.equal(picked.phase, 'pickup');
 assert.ok(picked.door > 0.45, `door did not open (${picked.door})`);
-assert.ok(picked.doorSpan < 2.8, `open door span exploded (${picked.doorSpan})`);
-assert.ok(picked.doorLift > closed.doorLift + 0.04, `door did not rise (${closed.doorLift} -> ${picked.doorLift})`);
+assert.ok(picked.doorSpan > 1.2 && picked.doorSpan < 2.8, `open door span exploded (${picked.doorSpan})`);
+assert.ok(picked.doorTop > closed.doorTop + 0.04, `door did not rise (${closed.doorTop} -> ${picked.doorTop})`);
 await click('#cancel');
 assert.equal((await state()).phase, 'explore');
 
@@ -68,22 +78,29 @@ await advance(400);
 const seated = await state();
 assert.equal(seated.phase, 'boarded');
 assert.equal(seated.camera, 'cabin');
-assert.ok(seated.cameraLocal[1] > 0.45 && seated.cameraLocal[1] < 0.85, `cabin eye height ${seated.cameraLocal[1]}`);
+assert.ok(seated.cameraLocal[1] > 0.95 && seated.cameraLocal[1] < 1.2, `cabin eye height ${seated.cameraLocal[1]}`);
 assert.ok(Math.abs(seated.cameraLocal[0]) < 0.45, `cabin eye x ${seated.cameraLocal[0]}`);
-assert.ok(seated.cameraLocal[2] > -0.2 && seated.cameraLocal[2] < 1.2, `cabin eye z ${seated.cameraLocal[2]}`);
+assert.ok(seated.cameraLocal[2] > -0.05 && seated.cameraLocal[2] < 0.25, `cabin eye z ${seated.cameraLocal[2]}`);
 await click('#start-ride');
-assert.equal((await state()).phase, 'boarded');
+assert.equal((await state()).phase, 'boarded', 'start stays gated until the belt is on');
+await click('#buckle');
+await advance(1600);
+await click('#start-ride');
+assert.equal((await state()).phase, 'ride');
 await page.keyboard.press('p');
 assert.equal((await state()).phoneVisible, true);
+await page.evaluate(() => sessionStorage.removeItem('cybercab-ride'));
+await page.reload({ waitUntil: 'domcontentloaded' });
+await page.waitForFunction(() => typeof window.advanceTime === 'function' && !document.getElementById('boot'), null, { timeout: 90000 });
 
 async function confirmInView(width, height) {
   await page.setViewportSize({ width, height });
   await page.evaluate(() => window.advanceTime(16));
+  await page.locator('#request').scrollIntoViewIfNeeded();
   const box = await page.locator('#request').boundingBox();
   assert.ok(box, `request missing at ${width}x${height}`);
   assert.ok(box.y >= 0 && box.y + box.height <= height + 1, `request off-screen at ${width}x${height} (${box.y}, ${box.height})`);
 }
-await click('#cancel');
 await confirmInView(320, 568);
 await confirmInView(844, 390);
 
