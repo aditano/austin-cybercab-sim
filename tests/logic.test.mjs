@@ -2,20 +2,31 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  DESTINATIONS, blockedSpeed, defaultQuality, doorAngle, parseSnapshot, pixelRatioFor,
-  pointInRing, shadowMapSize, stepPedestrian, togglePhone,
+  DESTINATIONS, blockedSpeed, defaultQuality, doorTarget, parseSnapshot, pixelRatioFor,
+  pointInRing, shadowMapSize, stepDoor, stepPedestrian, togglePhone,
 } from '../src/logic.ts';
 
 const geo = fs.readFileSync(new URL('../src/geo.ts', import.meta.url), 'utf8');
 const ring = Function(`return ${geo.match(/export const AUSTIN_ROBOTAXI_GEOFENCE: \[number, number\]\[\] = (\[[\s\S]*?\]);/)[1]}`)();
 
-test('door hinge follows the authored local-Y swing', () => {
-  assert.equal(doorAngle('r', 0), 0);
-  assert.equal(doorAngle('r', 1), 1.95);
-  assert.equal(doorAngle('l', 1), -1.95);
-  assert.equal(doorAngle('r', 2), 1.95);
+test('door stroke matches the show-car close and the glTF hinge', () => {
+  assert.equal(stepDoor(1, 0, 1.5, false), 0);
+  const almost = stepDoor(1, 0, 1.4, false);
+  assert.ok(almost > 0.05 && almost < 0.08, `1.4 s should still be shut enough to start (${almost})`);
+  assert.equal(stepDoor(0, 1, 0.75, false), 0.5);
+  assert.equal(stepDoor(0.2, 1, 1, true), 1);
+  assert.equal(doorTarget('pickup', 0, false, false), 1);
+  assert.equal(doorTarget('dispatch', 0.1, false, false, false), 0);
+  assert.equal(doorTarget('dispatch', 0.1, false, false, true), 1);
+  assert.equal(doorTarget('boarded', 1, false, false), 1);
+  assert.equal(doorTarget('boarded', 1, true, false), 0);
+  assert.equal(doorTarget('arrived', 1, true, false), 0);
+  assert.equal(doorTarget('arrived', 1, true, true), 1);
+  assert.equal(doorTarget('ride', 2, true, false), 0);
   const vehicle = fs.readFileSync(new URL('../src/vehicle.ts', import.meta.url), 'utf8');
-  assert.match(vehicle, /doorAngle/);
+  assert.match(vehicle, /door_open/);
+  assert.match(vehicle, /door-hinge-r/);
+  assert.doesNotMatch(vehicle, /doorAngle/);
   assert.doesNotMatch(vehicle, /function doorHinge/);
 });
 

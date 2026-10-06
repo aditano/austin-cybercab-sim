@@ -68,6 +68,9 @@ assert.equal(picked.phase, 'pickup');
 assert.ok(picked.door > 0.45, `door did not open (${picked.door})`);
 assert.ok(picked.doorSpan > 1.2 && picked.doorSpan < 2.8, `open door span exploded (${picked.doorSpan})`);
 assert.ok(picked.doorTop > closed.doorTop + 0.04, `door did not rise (${closed.doorTop} -> ${picked.doorTop})`);
+assert.equal(picked.lights.pickup, true);
+assert.equal(picked.lights.hazard, true);
+assert.ok(picked.lights.teal > 0.8, `pickup bar was not teal (${picked.lights.teal})`);
 await click('#cancel');
 assert.equal((await state()).phase, 'explore');
 
@@ -87,6 +90,8 @@ await click('#buckle');
 await advance(1600);
 await click('#start-ride');
 assert.equal((await state()).phase, 'ride');
+await advance(2000);
+assert.ok(Math.abs((await state()).wheelSpin) > 0.4, `wheels did not roll (${(await state()).wheelSpin})`);
 await page.keyboard.press('p');
 assert.equal((await state()).phoneVisible, true);
 await page.evaluate(() => sessionStorage.removeItem('cybercab-ride'));

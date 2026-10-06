@@ -69,18 +69,14 @@ def materials():
     M['frit'] = mat('glass-frit', '#050505', rough=0.15, coat=0.6, coat_rough=0.02)
     M['rubber'] = mat('tire-rubber', '#141414', rough=0.82, spec=0.3)
     M['rubber_side'] = mat('tire-sidewall', '#101010', rough=0.62, spec=0.3)
-    M['aero'] = mat('aero-cover', '#9C7E4E', metal=0.70, rough=0.30, coat=0.45, coat_rough=0.10)
-    M['aero_inner'] = mat('aero-cover-inner', '#8E7247', metal=0.72, rough=0.24, coat=0.55, coat_rough=0.06)
+    M['aero'] = mat('aero-cover', '#A98A57', metal=0.65, rough=0.36, coat=0.35, coat_rough=0.12)
+    M['aero_inner'] = mat('aero-cover-inner', '#9C7F50', metal=0.68, rough=0.30, coat=0.45, coat_rough=0.08)
     M['hub'] = mat('hub-cap', '#8E7E62', metal=0.9, rough=0.22)
     M['liner'] = mat('wheel-liner', '#0B0B0C', rough=0.9)
     M['lamp_w'] = mat('lamp-front', '#FFFFFF', rough=0.2, emit='#FFFFFF', emit_str=18.0)
     M['lamp_r'] = mat('lamp-rear', '#FF1A10', rough=0.25, emit='#FF1A10', emit_str=28.0)
     M['lamp_r_off'] = mat('lamp-rear-lens', '#5A0A08', rough=0.15, coat=0.6, emit='#FF1A10', emit_str=1.5)
     M['amber'] = mat('lamp-amber', '#FF8A10', rough=0.25, emit='#FF8000', emit_str=2.0)
-    M['turn'] = mat('lamp-turn-amber', '#FF8A10', rough=0.2, emit='#FF7A00', emit_str=30.0)
-    M['turn_r'] = mat('lamp-turn-rear', '#FF2A18', rough=0.2, emit='#FF2A18', emit_str=60.0)
-    M['brake'] = mat('lamp-brake', '#FF1A10', rough=0.2, emit='#FF1208', emit_str=70.0)
-    M['teal'] = mat('lamp-front-teal', '#30E0B0', rough=0.2, emit='#2FE3B4', emit_str=22.0)
     M['leather'] = mat('seat-leather', '#202124', rough=0.42, coat=0.15, coat_rough=0.3, sheen=0.3)
     M['leather_light'] = mat('seat-insert', '#2C2D30', rough=0.5, sheen=0.4)
     M['carpet'] = mat('carpet', '#151617', rough=0.95, spec=0.2)
@@ -347,7 +343,7 @@ def side_glass_outline():
     """Door glass + quarter glass as one outline (the door cut splits them)."""
     pts = []
     # bottom: quarter-window sill then door sill
-    pts += [(-1.42, 1.080), (-1.20, 1.084), (-1.00, 1.078), (-0.80, 1.062), (-0.56, 1.030), (-0.535, 1.008), (-0.50, 0.995)]
+    pts += [(-1.095, 1.168), (-0.80, 1.100), (-0.56, 1.040), (-0.535, 1.010), (-0.50, 0.995)]
     for i in range(1, 9):
         y = -0.50 + (0.80 + 0.50) * i / 8
         pts.append((y, 0.995 + (0.937 - 0.995) * (y + 0.50) / 1.30))
@@ -357,7 +353,7 @@ def side_glass_outline():
         pts.append((y, a_pillar_z(y, 0.042)))
     # top: under the roof rail
     for i in range(1, 13):
-        y = 0.40 + (-1.40 - 0.40) * i / 12
+        y = 0.40 + (-1.07 - 0.40) * i / 12
         zr = S.z_rail(y) - 0.032
         pts.append((y, zr))
     return pts
@@ -484,12 +480,12 @@ def wheel(name, side, M):
     xo = W / 2 + 0.006
     # domed aero cover: small hub, convex inner disc, stepped outer ring, recessed edge
     cover = [
-        (0.0, xo + 0.046), (0.020, xo + 0.046), (0.028, xo + 0.040), (0.040, xo + 0.038),
-        (0.12, xo + 0.031), (0.19, xo + 0.016), (0.226, xo + 0.004), (0.232, xo - 0.004),
-        (0.240, xo - 0.006), (0.262, xo - 0.006), (0.274, xo - 0.011), (0.278, xo - 0.019),
+        (0.0, xo + 0.040), (0.020, xo + 0.040), (0.028, xo + 0.034), (0.040, xo + 0.031),
+        (0.12, xo + 0.026), (0.19, xo + 0.016), (0.228, xo + 0.008), (0.234, xo + 0.002),
+        (0.240, xo - 0.001), (0.262, xo - 0.003), (0.274, xo - 0.008), (0.278, xo - 0.016),
         (0.276, xo - 0.040), (0.22, xo - 0.05), (0.0, xo - 0.05),
     ]
-    cm = [2, 2, 2, 0, 0, 0, 3, 1, 1, 1, 1, 3, 3, 3]
+    cm = [2, 2, 2, 0, 0, 0, 0, 1, 1, 1, 1, 3, 3, 3]
     c = revolve(name + '-cover', cover, 72, cm, [M['aero_inner'], M['aero'], M['hub'], M['liner']])
     w = join([t, c], name)
     if side < 0:
@@ -606,8 +602,6 @@ def keyframes(ob, path, channels, interp='BEZIER', name='Anim'):
     track.name = name
     st = track.strips.new(name, int(frames[0]), act)
     st.name = name
-    st.extrapolation = 'NOTHING'
-    track.mute = True
     ad.action = None
     for idx, pts in channels.items():
         getattr(ob, path)[idx] = pts[0][1]
@@ -718,6 +712,7 @@ def main():
         return 0.660 + 0.11 * min(1.0, x / 0.86) ** 2.8
     def fz(dz):
         return lambda i: rz(i, zlb(i) + dz, S.ROW_ROCK, S.NV - 1)
+    bar = ribbon('lamp-front', rows, front_st, fz(-0.0045), fz(0.0045), 0.0028, M['lamp_w'])
     chan = ribbon('lamp-front-channel', rows, front_st, fz(-0.020), fz(0.006), 0.0014, M['gloss_black'])
     # rear: black band under the deck lip with a red bar
     zr0 = min(S.z_rail(ys[i]) for i in rear_st)
@@ -726,67 +721,10 @@ def main():
     rband = ribbon('tail-band', rows, rear_st, rb_lo, rb_hi, 0.0012, M['gloss_black'])
     rl_lo = lambda i: rz(i, zr0 - 0.054, S.ROW_ROCK, S.ROW_RAIL)
     rl_hi = lambda i: rz(i, zr0 - 0.030, S.ROW_ROCK, S.ROW_RAIL)
-
-    # segmented emissive bars: 6 segments per side, 1 = centre .. 6 = outer end.
-    NSEG = 6
-    def seg_split(st_list, lo_f):
-        """Group stations into NSEG bands by |x| at the bar, sharing boundary stations."""
-        xs = {}
-        for i in st_list:
-            lo = lo_f(i)
-            if lo is None:
-                continue
-            xs[i] = abs(row_point(rows, i, lo).x)
-        xmax = max(xs.values())
-        edges = [xmax * k / NSEG for k in range(NSEG + 1)]
-        order = sorted(xs, key=lambda i: xs[i])
-        groups = []
-        for k in range(NSEG):
-            g = [i for i in order if edges[k] - 1e-6 <= xs[i] <= edges[k + 1] + 1e-6]
-            groups.append(g)
-        # share neighbours so adjacent segments meet without gaps
-        for k in range(NSEG - 1):
-            a, b = groups[k], groups[k + 1]
-            if a and b:
-                if b[0] not in a:
-                    a.append(b[0])
-        return [sorted(g) for g in groups]
-
-    def seg_meshes(prefix, st_list, lo_f, hi_f, off, m, groups):
-        out = {}
-        for k, g in enumerate(groups):
-            if len(g) < 2:
-                continue
-            for side, sname in ((1, 'R'), (-1, 'L')):
-                ob = ribbon('%s-%s%d' % (prefix, sname, k + 1), rows, g, lo_f, hi_f, off, m, mirror=False)
-                if side < 0:
-                    for v in ob.data.vertices:
-                        v.co.x = -v.co.x
-                    ob.data.flip_normals()
-                c = sum((v.co for v in ob.data.vertices), Vector()) / max(1, len(ob.data.vertices))
-                set_origin(ob, c)
-                out[(sname, k + 1)] = ob
-        return out
-
-    f_lo, f_hi = fz(-0.0045), fz(0.0045)
-    fgroups = seg_split(front_st, f_lo)
-    rgroups = seg_split(rear_st, rl_lo)
-    lights = {}
-    lights['front'] = seg_meshes('lamp-front', front_st, f_lo, f_hi, 0.0028, M['lamp_w'], fgroups)
-    lights['front_turn'] = seg_meshes('lamp-front-turn', front_st, f_lo, f_hi, 0.0034, M['turn'], fgroups)
-    lights['front_teal'] = seg_meshes('lamp-front-teal', front_st, f_lo, f_hi, 0.0031, M['teal'], fgroups)
-    lights['rear'] = seg_meshes('lamp-rear', rear_st, rl_lo, rl_hi, 0.0028, M['lamp_r'], rgroups)
-    lights['rear_brake'] = seg_meshes('lamp-rear-brake', rear_st, rl_lo, rl_hi, 0.0033, M['brake'], rgroups)
-    lights['rear_turn'] = seg_meshes('lamp-rear-turn', rear_st, rl_lo, rl_hi, 0.0038, M['turn_r'], rgroups)
-    # turn overlays only on the three outer segments (4-6) of each bar (lit span matches the We, Robot frames)
-    for key in ('front_turn', 'rear_turn'):
-        for sk in list(lights[key]):
-            if sk[1] < NSEG - 2:
-                delete(lights[key].pop(sk))
-    OFF = 0.001     # overlay "off" scale (glTF-safe, effectively invisible)
-    for key in ('front_turn', 'front_teal', 'rear_brake', 'rear_turn'):
-        for ob in lights[key].values():
-            ob.scale = (OFF, OFF, OFF)
+    rlamp = ribbon('lamp-rear', rows, rear_st, rl_lo, rl_hi, 0.0028, M['lamp_r'])
+    # lower rear corner lamps
+    low_st = [i for i in range(nst) if -2.16 < ys[i] < -1.84 and rows[i][S.ROW_ROCK + 1][0] > 0.42]
+    ll = ribbon('lamp-rear-low', rows, low_st, lambda i: S.ROW_ROCK + 0.25, lambda i: S.ROW_ROCK + 0.55, 0.002, M['lamp_r'])
     log('lights')
 
     # ---------------- wheels
@@ -846,62 +784,16 @@ def main():
         log('hinge', s, tuple(round(c, 3) for c in piv))
 
     # parent body parts to root
-    lamp_root = empty('lights', (0, 0, 0), root)
-    for o in (body, ws, ws_frit, qg, qf, chan, rband, liner, cab):
+    for o in (body, ws, ws_frit, qg, qf, bar, chan, rband, rlamp, ll, liner, cab):
         parent_keep(o, root)
-    for grp in lights.values():
-        for o in grp.values():
-            parent_keep(o, lamp_root)
 
-    # ---------------- animations (24 fps). Light overlays toggle by node scale (1 = on, OFF = off)
-    sc.render.fps = 24
-    sc.frame_start, sc.frame_end = 1, 72
-    for s_, (h, sd) in hinges.items():
-        keyframes(h, 'rotation_euler', {0: [(1, 0.0), (40, -DOOR_UP)], 2: [(1, 0.0), (40, sd * DOOR_OUT)]}, 'BEZIER', 'door_open')
+    # ---------------- animation: door open (frames 1-40), wheel spin (1-25 one turn)
+    sc.frame_start, sc.frame_end = 1, 40
+    for s, (h, sd) in hinges.items():
+        keyframes(h, 'rotation_euler', {0: [(1, 0.0), (40, -DOOR_UP)], 2: [(1, 0.0), (40, sd * DOOR_OUT)]}, 'BEZIER', 'DoorsOpen')
     for key, w in wheels.items():
         w.rotation_mode = 'XYZ'
-        keyframes(w, 'rotation_euler', {0: [(1, 0.0), (25, -2 * math.pi)]}, 'LINEAR', 'wheel_spin')
-
-    def scale_track(ob, pts, name, interp='LINEAR'):
-        ch = {a: [(f, v) for f, v in pts] for a in range(3)}
-        keyframes(ob, 'scale', ch, interp, name)
-
-    # lights_wake: bars off, then a centre-out sweep (front and rear together), ~0.9 s
-    for grp, delay in (('front', 0), ('rear', 3)):
-        for (sname, k), ob in lights[grp].items():
-            on = 4 + delay + 3 * (k - 1)
-            scale_track(ob, [(1, OFF), (on, OFF), (on + 2, 1.0), (40, 1.0)], 'lights_wake')
-    # brief brightness flash at the end of the wake: brake overlay pulses once
-    for ob in lights['rear_brake'].values():
-        scale_track(ob, [(1, OFF), (26, OFF), (28, 1.0), (34, 1.0), (38, OFF), (40, OFF)], 'lights_wake')
-
-    # turn signals: outer three segments of each bar blink. Timing measured from the We, Robot recap
-    # (rear outer ends, red): on ~0.42 s, off ~0.25 s, period ~0.67 s (about 90 flashes/min). 3 cycles.
-    blink = []
-    for c in range(3):
-        f0 = 1 + c * 16
-        blink += [(f0, 1.0), (f0 + 10, OFF)]
-    blink.append((49, OFF))
-    for sides, anim_name in (('L', 'turn_left'), ('R', 'turn_right'), ('LR', 'hazard')):
-        for key in ('front_turn', 'rear_turn'):
-            for (sname, k), ob in lights[key].items():
-                if sname in sides:
-                    scale_track(ob, blink, anim_name, 'CONSTANT')
-
-    # brake: full-width rear overlay snaps on, holds, releases
-    for ob in lights['rear_brake'].values():
-        scale_track(ob, [(1, OFF), (2, 1.0), (36, 1.0), (37, OFF)], 'brake', 'CONSTANT')
-
-    # pickup: front bar turns teal (observed in Tesla footage at a rider pickup), steady then off
-    for (sname, k), ob in lights['front_teal'].items():
-        scale_track(ob, [(1, OFF), (6, 1.0), (60, 1.0), (66, OFF), (72, OFF)], 'pickup')
-
-    sc.frame_set(0)
-    # rest pose: main bars lit, overlays off (keyframes() leaves each prop at its first key)
-    for key, grp in lights.items():
-        for ob in grp.values():
-            v = 1.0 if key in ('front', 'rear') else OFF
-            ob.scale = (v, v, v)
+        keyframes(w, 'rotation_euler', {0: [(1, 0.0), (25, -2 * math.pi)]}, 'LINEAR', 'WheelSpin')
 
     # stats
     tris = 0

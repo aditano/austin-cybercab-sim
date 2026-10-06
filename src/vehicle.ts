@@ -3,13 +3,28 @@ import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.j
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { MEGALAMP, VEHICLE_PLATE } from './geo';
-import { doorAngle } from './logic';
+import {
+  blinkLit, holdTurn, shouldWake, steerTarget, vehicleSignals, wakeSegmentScale, wheelRoll,
+  type TurnSignal, type VehicleSignals,
+} from './logic';
 
 export type LampMode = 'idle' | 'match';
 
-const WHEEL_R = 0.33;
+const LAMP_OFF = 0.001;
+const WAKE_END = 1.55;
+const LAMP_TAGS = ['front-teal', 'front-turn', 'rear-brake', 'rear-turn', 'front', 'rear'] as const;
+type LampTag = typeof LAMP_TAGS[number];
+type LampKind = 'teal' | 'front-turn' | 'brake' | 'rear-turn' | 'front' | 'rear';
 
-type Axis = 'x' | 'y' | 'z';
+type LampSeg = {
+  node: THREE.Object3D;
+  kind: LampKind;
+  side: 'L' | 'R';
+  index: number;
+};
+
+type QuatSampler = { evaluate: (time: number) => ArrayLike<number> };
+type SampledQuatTrack = THREE.QuaternionKeyframeTrack & { createInterpolant: () => QuatSampler };
 
 function materialsOf(mesh: THREE.Mesh): THREE.Material[] {
   return Array.isArray(mesh.material) ? mesh.material : [mesh.material];
@@ -20,26 +35,55 @@ function asMesh(obj: THREE.Object3D | undefined, name: string): THREE.Mesh {
   return obj;
 }
 
-function axisMostAligned(obj: THREE.Object3D, worldDir: THREE.Vector3): Axis {
-  obj.updateWorldMatrix(true, true);
-  const local = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)];
-  const names: Axis[] = ['x', 'y', 'z'];
-  let best = 0;
-  let bestDot = -1;
-  for (let i = 0; i < local.length; i++) {
-    const dot = Math.abs(local[i].clone().transformDirection(obj.matrixWorld).dot(worldDir));
-    if (dot > bestDot) {
-      bestDot = dot;
-      best = i;
+function isLampTag(value: string): value is LampTag {
+  return (LAMP_TAGS as readonly string[]).includes(value);
+}
+
+function lampKind(tag: LampTag): LampKind {
+  switch (tag) {
+    case 'front-teal': return 'teal';
+    case 'front-turn': return 'front-turn';
+    case 'rear-brake': return 'brake';
+    case 'rear-turn': return 'rear-turn';
+    case 'front': return 'front';
+    case 'rear': return 'rear';
+    default: {
+      const _never: never = tag;
+      return _never;
     }
   }
-  return names[best];
+}
+
+function meshesUnder(node: THREE.Object3D): THREE.Mesh[] {
+  const meshes: THREE.Mesh[] = [];
+  node.traverse((child) => {
+    if (child instanceof THREE.Mesh) meshes.push(child);
+  });
+  return meshes;
+}
+
+function cloneStandard(mesh: THREE.Mesh, name: string): THREE.MeshStandardMaterial {
+  const source = materialsOf(mesh)[0];
+  if (!(source instanceof THREE.MeshStandardMaterial)) throw new Error(`Cybercab material on ${name} is not standard`);
+  return source.clone();
+}
+
+function sideAsked(turn: TurnSignal, side: 'L' | 'R'): boolean {
+  switch (turn) {
+    case 'left': return side === 'L';
+    case 'right': return side === 'R';
+    case 'none': return false;
+    default: {
+      const _never: never = turn;
+      return _never;
+    }
+  }
 }
 
 /**
- * Original subdivision-surface Cybercab. The mesh, materials, and hinge pivots
- * come from tools/cybercab/build.py. Lamp color, the plate, and the door swing
- * stay under the ride-flow API.
+ * Photo-fit Cybercab from tools/cybercab/build.py. Doors sample the `door_open`
+ * clip. Wheels roll on local X under the front steer pivots. Light segments
+ * under `lights` are scaled on and off; see tools/cybercab/MODEL_NOTES.md.
  */
 export async function loadCybercab() {
   const group = new THREE.Group();
@@ -57,89 +101,122 @@ export async function loadCybercab() {
     if (obj.name) named.set(obj.name, obj);
   });
 
+  const lamps: LampSeg[] = [];
+  for (const [name, node] of named) {
+    const match = /^lamp-(front-teal|front-turn|rear-brake|rear-turn|front|rear)-([LR])([1-6])$/.exec(name);
+    if (!match || !isLampTag(match[1])) continue;
+    const side = match[2] === 'R' ? 'R' : 'L';
+    lamps.push({ node, kind: lampKind(match[1]), side, index: Number(match[3]) });
+  }
+  if (lamps.length < 48) throw new Error(`Cybercab light segments missing (${lamps.length})`);
+
   model.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh)) return;
-    const glass = /glass|windshield/i.test(obj.name);
-    obj.castShadow = !glass;
-    obj.receiveShadow = !glass;
+    const glass = /glass/i.test(obj.name) && !/frit/i.test(obj.name);
+    const lamp = /^lamp-/.test(obj.name);
+    obj.castShadow = !glass && !lamp && obj.name !== 'interior';
+    obj.receiveShadow = !glass && !lamp;
+    if (glass) obj.renderOrder = 2;
     for (const mat of materialsOf(obj)) {
       if (!(mat instanceof THREE.MeshPhysicalMaterial)) continue;
-      if (glass || mat.transmission > 0) {
-        mat.thickness = 0.045;
-        mat.attenuationDistance = glass && /door-glass|side/i.test(obj.name) ? 0.22 : 0.55;
-        mat.attenuationColor = new THREE.Color('#0c181e');
-        mat.envMapIntensity = 1.05;
-        mat.roughness = Math.min(mat.roughness, 0.06);
-      } else if (mat.metalness > 0.4 && mat.clearcoat > 0.4) {
-        // Clearcoat paint. Performance mode drops scene.environmentIntensity,
-        // so the car's own intensity has to carry the metallic read.
-        mat.envMapIntensity = 2.1;
-        mat.clearcoat = 1;
-        mat.clearcoatRoughness = Math.min(mat.clearcoatRoughness, 0.055);
+      if (glass || mat.transparent) {
+        if (glass) {
+          mat.transparent = true;
+          mat.depthWrite = false;
+          mat.side = THREE.DoubleSide;
+          mat.envMapIntensity = 1.15;
+          mat.roughness = Math.min(mat.roughness, 0.08);
+        }
+      } else if (mat.metalness > 0.5 && mat.clearcoat > 0.2) {
+        mat.envMapIntensity = 1.75;
       }
     }
   });
-
-  const megalamp = asMesh(named.get('megalamp'), 'megalamp');
-  const megalampMat = (materialsOf(megalamp)[0] as THREE.MeshStandardMaterial).clone();
-  megalamp.material = megalampMat;
-
-  const glowMat = new THREE.MeshBasicMaterial({
-    color: 0xffffff, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-  });
-  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.05, 0.028), glowMat);
-  glow.name = 'megalamp-glow';
-  glow.castShadow = false;
-  glow.rotation.y = Math.PI;
-  const lampPos = new THREE.Vector3();
-  megalamp.getWorldPosition(lampPos);
-  group.worldToLocal(lampPos);
-  glow.position.copy(lampPos);
-  glow.position.z -= 0.03;
-  group.add(glow);
-
-  const lampLight = new THREE.PointLight(0xffffff, 0.08, 2.4, 2);
-  lampLight.position.copy(lampPos);
-  lampLight.position.z -= 0.45;
-  group.add(lampLight);
-
-  const hazardMeshes = ['hazard-fl', 'hazard-fr', 'hazard-rl', 'hazard-rr'].map((name) => asMesh(named.get(name), name));
-  const amber = (materialsOf(hazardMeshes[0])[0] as THREE.MeshStandardMaterial).clone();
-  for (const hazard of hazardMeshes) hazard.material = amber;
-
-  const rearBar = asMesh(named.get('rear-lightbar'), 'rear-lightbar');
-  const red = (materialsOf(rearBar)[0] as THREE.MeshStandardMaterial).clone();
-  rearBar.material = red;
-  const rearLow = named.get('rear-bumper-lamp');
-  if (rearLow instanceof THREE.Mesh) rearLow.material = red;
-
-  const screenCanvas = document.createElement('canvas');
-  screenCanvas.width = 1024;
-  screenCanvas.height = 480;
-  const sctx = screenCanvas.getContext('2d')!;
-  sctx.fillStyle = '#101418';
-  sctx.fillRect(0, 0, 1024, 480);
-  sctx.fillStyle = '#8ea0a6';
-  sctx.font = '600 22px sans-serif';
-  sctx.fillText('DESTINATION', 56, 78);
-  sctx.fillStyle = '#f4f1ea';
-  sctx.font = '600 54px sans-serif';
-  sctx.fillText('Congress & 7th', 56, 156);
-  sctx.fillStyle = '#c24bff';
-  sctx.fillRect(56, 210, 280, 8);
-  sctx.fillStyle = '#9aa8a4';
-  sctx.font = '28px sans-serif';
-  sctx.fillText('Buckle up, then Start Ride', 56, 280);
-  const screenTex = new THREE.CanvasTexture(screenCanvas);
-  screenTex.colorSpace = THREE.SRGBColorSpace;
-  const screen = asMesh(named.get('front-screen'), 'front-screen');
-  const uv = screen.geometry.getAttribute('uv');
-  if (uv) {
-    for (let i = 0; i < uv.count; i += 1) uv.setX(i, 1 - uv.getX(i));
-    uv.needsUpdate = true;
+  for (const seg of lamps) {
+    for (const mesh of meshesUnder(seg.node)) {
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+    }
   }
-  screen.material = new THREE.MeshBasicMaterial({ map: screenTex });
-  screen.castShadow = false;
+
+  const frontMesh = meshesUnder(lamps.find((seg) => seg.kind === 'front')?.node ?? group)[0];
+  if (!frontMesh) throw new Error('Cybercab is missing the front light bar');
+  const frontMat = cloneStandard(frontMesh, 'lamp-front');
+  const frontEmissive = frontMat.emissiveIntensity;
+  for (const seg of lamps) {
+    if (seg.kind !== 'front') continue;
+    for (const mesh of meshesUnder(seg.node)) mesh.material = frontMat;
+  }
+
+  const tealMesh = meshesUnder(lamps.find((seg) => seg.kind === 'teal')?.node ?? group)[0];
+  if (!tealMesh) throw new Error('Cybercab is missing the teal pickup bar');
+  const tealMat = cloneStandard(tealMesh, 'lamp-front-teal');
+  const tealColor = tealMat.emissive.clone();
+  tealMat.emissiveIntensity = 2.2;
+  tealMat.toneMapped = false;
+  for (const seg of lamps) {
+    if (seg.kind !== 'teal') continue;
+    for (const mesh of meshesUnder(seg.node)) mesh.material = tealMat;
+  }
+
+  const frontTurnMesh = meshesUnder(lamps.find((seg) => seg.kind === 'front-turn')?.node ?? group)[0];
+  const rearTurnMesh = meshesUnder(lamps.find((seg) => seg.kind === 'rear-turn')?.node ?? group)[0];
+  const brakeMesh = meshesUnder(lamps.find((seg) => seg.kind === 'brake')?.node ?? group)[0];
+  if (!frontTurnMesh || !rearTurnMesh || !brakeMesh) throw new Error('Cybercab is missing turn or brake segments');
+  const frontTurnMat = cloneStandard(frontTurnMesh, 'lamp-turn-amber');
+  frontTurnMat.emissiveIntensity = 8;
+  frontTurnMat.toneMapped = false;
+  const rearTurnMat = cloneStandard(rearTurnMesh, 'lamp-turn-rear');
+  // The real outer blink is red and disappears on a lit tail in daylight.
+  // Hide the tail underneath and flash these ends amber so the signal reads.
+  rearTurnMat.color.setHex(0xff7a12);
+  rearTurnMat.emissive.setHex(0xff8a1e);
+  rearTurnMat.emissiveIntensity = 7;
+  rearTurnMat.toneMapped = false;
+  const brakeMat = cloneStandard(brakeMesh, 'lamp-brake');
+  brakeMat.emissiveIntensity = 6;
+  brakeMat.toneMapped = false;
+  for (const mat of [tealMat, frontTurnMat, rearTurnMat, brakeMat]) {
+    mat.polygonOffset = true;
+    mat.polygonOffsetFactor = -2;
+    mat.polygonOffsetUnits = -2;
+  }
+  // Overlays are authored a fraction of a millimetre proud. Quantization flattens
+  // that, so they z-fight the bar. Push them out along the nose axis.
+  for (const seg of lamps) {
+    if (seg.kind === 'brake') seg.node.position.z += 0.01;
+    else if (seg.kind === 'rear-turn') seg.node.position.z += 0.016;
+    else if (seg.kind === 'teal') seg.node.position.z -= 0.01;
+    else if (seg.kind === 'front-turn') seg.node.position.z -= 0.016;
+  }
+  for (const seg of lamps) {
+    const mat = seg.kind === 'front-turn' ? frontTurnMat : seg.kind === 'rear-turn' ? rearTurnMat : seg.kind === 'brake' ? brakeMat : null;
+    if (!mat) continue;
+    for (const mesh of meshesUnder(seg.node)) mesh.material = mat;
+  }
+  const rearMesh = meshesUnder(lamps.find((seg) => seg.kind === 'rear')?.node ?? group)[0];
+  if (!rearMesh) throw new Error('Cybercab is missing the rear light bar');
+  const rearMat = cloneStandard(rearMesh, 'lamp-rear');
+  const rearColor = rearMat.color.clone();
+  const rearEmissive = rearMat.emissive.clone();
+  const rearRest = 3.4;
+  rearMat.emissiveIntensity = rearRest;
+  for (const seg of lamps) {
+    if (seg.kind !== 'rear') continue;
+    for (const mesh of meshesUnder(seg.node)) mesh.material = rearMat;
+  }
+
+  const megalamp = asMesh(named.get('lamp-front-channel'), 'lamp-front-channel');
+  const frontBox = new THREE.Box3();
+  for (const seg of lamps) if (seg.kind === 'front') frontBox.expandByObject(seg.node);
+  const lampPos = frontBox.getCenter(new THREE.Vector3());
+  lampPos.z = frontBox.min.z;
+  group.worldToLocal(lampPos);
+  const glowColor = new THREE.Color(0xffffff);
+  const lampLight = new THREE.PointLight(0xffffff, 0.08, 3.2, 2);
+  lampLight.position.copy(lampPos);
+  lampLight.position.z -= 0.35;
+  group.add(lampLight);
 
   const plateCanvas = document.createElement('canvas');
   plateCanvas.width = 256;
@@ -158,34 +235,43 @@ export async function loadCybercab() {
   pctx.fillText(VEHICLE_PLATE, 128, 92);
   const plateTex = new THREE.CanvasTexture(plateCanvas);
   plateTex.colorSpace = THREE.SRGBColorSpace;
-  const plate = asMesh(named.get('plate'), 'plate');
-  const plateMat = (materialsOf(plate)[0] as THREE.MeshStandardMaterial).clone();
-  plateMat.map = plateTex;
-  plateMat.color.setHex(0xffffff);
-  plateMat.roughness = 0.55;
-  plate.material = plateMat;
+  const plate = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.34, 0.17),
+    new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.55, metalness: 0.04 }),
+  );
+  plate.name = 'plate';
+  plate.position.set(0, 0.5, 2.175);
+  plate.castShadow = false;
+  plate.receiveShadow = true;
+  group.add(plate);
+  const plateLamp = new THREE.Mesh(
+    new THREE.BoxGeometry(0.28, 0.012, 0.012),
+    new THREE.MeshStandardMaterial({ color: 0xfff6e8, emissive: 0xfff6e8, emissiveIntensity: 3.2, roughness: 0.35 }),
+  );
+  plateLamp.name = 'plate-lamp';
+  plateLamp.position.set(0, 0.6, 2.168);
+  plateLamp.castShadow = false;
+  group.add(plateLamp);
 
-  const lod0 = named.get('lod0') ?? null;
-  const lod1 = named.get('body-lod1') ?? null;
-  const windshield = named.get('windshield') ?? null;
-  const windshieldBezel = named.get('windshield-bezel') ?? null;
-  if (lod1) lod1.visible = false;
-
-  const doorSpins = (['r', 'l'] as const).map((suffix) => {
-    const spin = named.get(`door-hinge-${suffix}`);
-    if (!spin) throw new Error(`Cybercab is missing door-hinge-${suffix}`);
-    return { spin, side: suffix === 'r' ? 1 : -1 as const };
+  const doorClip = gltf.animations.find((clip) => clip.name === 'door_open');
+  if (!doorClip) throw new Error('Cybercab is missing door_open');
+  const doors = (['door-hinge-r', 'door-hinge-l'] as const).map((nodeName) => {
+    const spin = named.get(nodeName);
+    if (!spin) throw new Error(`Cybercab is missing ${nodeName}`);
+    const track = doorClip.tracks.find((item) => item.name === `${nodeName}.quaternion`);
+    if (!(track instanceof THREE.QuaternionKeyframeTrack)) throw new Error(`Cybercab is missing ${nodeName} in door_open`);
+    return { spin, sample: (track as SampledQuatTrack).createInterpolant(), duration: track.times[track.times.length - 1], side: nodeName.endsWith('-r') ? 1 : -1 };
   });
 
-  const spins = (['fl', 'fr', 'rl', 'rr'] as const).map((which) => {
+  const spins = (['fr', 'fl', 'rr', 'rl'] as const).map((which) => {
     const spin = named.get(`wheel-spin-${which}`);
     if (!spin) throw new Error(`Cybercab is missing wheel-spin-${which}`);
-    return { spin, axis: axisMostAligned(spin, new THREE.Vector3(1, 0, 0)) };
+    return spin;
   });
-  const steers = (['fl', 'fr'] as const).map((which) => {
+  const steers = (['fr', 'fl'] as const).map((which) => {
     const steer = named.get(`wheel-steer-${which}`);
     if (!steer) throw new Error(`Cybercab is missing wheel-steer-${which}`);
-    return { steer, axis: axisMostAligned(steer, new THREE.Vector3(0, 1, 0)) };
+    return steer;
   });
 
   const contact = new THREE.Mesh(
@@ -193,51 +279,105 @@ export async function loadCybercab() {
     new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }),
   );
   contact.rotation.x = -Math.PI / 2;
-  contact.position.y = 0.015;
-  contact.scale.set(1.05, 1.85, 1);
+  contact.position.y = 0.02;
+  contact.scale.set(0.9, 2.05, 1);
   contact.castShadow = false;
   group.add(contact);
 
   let lampMode: LampMode = 'idle';
   let hazardsOn = false;
   let lampTime = 0;
+  let wakeElapsed = -1;
+  let phaseName = '';
   let openAmount = 0;
   let prevYaw = group.rotation.y;
+  let prevSpeed = 0;
   let steerAngle = 0;
+  let brakeHold = 0;
+  let turnHeld: TurnSignal = 'none';
+  let turnHeldFor = 0;
+  let lastSignals: VehicleSignals = { match: false, pickup: false, hazard: false, brake: false, turn: 'none' };
+  let lastBlink = false;
+  let tealLevel = 0;
+  let brakeLevel = 0;
+  let turnLevel = 0;
 
-  function applyLamp(dt: number) {
-    lampTime += dt;
-    const blink = Math.sin(lampTime * 10) > 0;
-    switch (lampMode) {
-      case 'idle':
-        megalampMat.emissiveIntensity = 3.4;
-        megalampMat.emissive.setHex(0xffffff);
-        megalampMat.color.setHex(0xffffff);
-        glowMat.color.setHex(0xffffff);
-        glowMat.opacity = 0.28;
-        red.emissiveIntensity = 0.9;
-        lampLight.intensity = 0.06;
-        lampLight.distance = 2.2;
-        lampLight.color.setHex(0xffffff);
-        break;
-      case 'match':
-        megalampMat.color.setHex(MEGALAMP.color);
-        megalampMat.emissive.setHex(MEGALAMP.color);
-        megalampMat.emissiveIntensity = 2.6 + Math.sin(lampTime * 2.2) * 0.15;
-        glowMat.color.setHex(MEGALAMP.color);
-        glowMat.opacity = 0.32;
-        red.emissiveIntensity = 1.5;
-        lampLight.intensity = 0.1;
-        lampLight.distance = 2.2;
-        lampLight.color.setHex(MEGALAMP.color);
-        break;
-      default: {
-        const _never: never = lampMode;
-        return _never;
+  function runningScale(kind: 'front' | 'rear', index: number): number {
+    if (wakeElapsed < 0) return 1;
+    return wakeSegmentScale(index, wakeElapsed, kind === 'rear' ? 0.125 : 0);
+  }
+
+  function applyLights(signals: VehicleSignals, brake: boolean) {
+    const match = signals.match || lampMode === 'match';
+    const hazard = signals.hazard || hazardsOn;
+    const reveal = wakeElapsed >= 0 && wakeElapsed < 0.85 && !signals.pickup ? THREE.MathUtils.clamp(wakeElapsed / 0.7, 0, 1) : 1;
+    if (match && !signals.pickup) {
+      frontMat.color.setHex(MEGALAMP.color);
+      frontMat.emissive.setHex(MEGALAMP.color);
+      frontMat.emissiveIntensity = 3.6;
+      frontMat.toneMapped = false;
+      glowColor.setHex(MEGALAMP.color);
+    } else {
+      frontMat.color.setHex(0xffffff);
+      frontMat.emissive.setHex(0xffffff);
+      frontMat.emissiveIntensity = frontEmissive;
+      frontMat.toneMapped = true;
+      glowColor.setHex(0xffffff);
+    }
+    if (signals.pickup) glowColor.copy(tealColor);
+    lampLight.color.copy(glowColor);
+    if (brake) {
+      rearMat.color.setRGB(1, 0.015, 0.008);
+      rearMat.emissive.setRGB(1, 0.012, 0.006);
+      rearMat.emissiveIntensity = 9;
+      rearMat.toneMapped = false;
+    } else {
+      rearMat.color.copy(rearColor);
+      rearMat.emissive.copy(rearEmissive);
+      rearMat.emissiveIntensity = rearRest;
+      rearMat.toneMapped = true;
+    }
+    lampLight.intensity = (signals.pickup ? 0.04 : match ? 0.08 : 0.04) * reveal;
+    tealLevel = 0;
+    brakeLevel = 0;
+    turnLevel = 0;
+    for (const seg of lamps) {
+      const flash = lastBlink && (hazard || sideAsked(signals.turn, seg.side));
+      switch (seg.kind) {
+        case 'front':
+        case 'rear': {
+          let scale = seg.kind === 'front' && signals.pickup ? LAMP_OFF : runningScale(seg.kind, seg.index);
+          if (flash && seg.kind === 'rear' && seg.index >= 4) scale = Math.min(scale, 0.15);
+          else if (flash && seg.kind === 'rear') scale = Math.min(scale, 0.16);
+          if (seg.kind === 'rear' && brake && !(flash && seg.index >= 4)) seg.node.scale.set(1, 2.2, 1);
+          else seg.node.scale.setScalar(scale);
+          break;
+        }
+        case 'teal': {
+          const on = signals.pickup && !(flash && seg.index >= 4);
+          seg.node.scale.setScalar(on ? 1 : LAMP_OFF);
+          if (on) tealLevel = 1;
+          break;
+        }
+        case 'front-turn':
+        case 'rear-turn': {
+          const on = flash && seg.index >= 4;
+          seg.node.scale.setScalar(on ? 1 : LAMP_OFF);
+          if (on) turnLevel = 1;
+          break;
+        }
+        case 'brake': {
+          const on = brake && !(flash && seg.index >= 4);
+          seg.node.scale.setScalar(on ? 1 : LAMP_OFF);
+          if (on) brakeLevel = 1;
+          break;
+        }
+        default: {
+          const _never: never = seg.kind;
+          throw new Error(`unhandled lamp ${_never}`);
+        }
       }
     }
-    amber.emissiveIntensity = hazardsOn && blink ? 3 : 0.08;
-    if (hazardsOn) red.emissiveIntensity = blink ? 3.1 : 0.2;
   }
 
   const cab = {
@@ -247,10 +387,9 @@ export async function loadCybercab() {
     cameraClearance: 5.6,
     setDoor(open: number, side = 1) {
       openAmount = THREE.MathUtils.clamp(open, 0, 1);
-      for (const door of doorSpins) {
-        const swing = door.side === side ? openAmount : 0;
-        // Parent orient already aims this node's Y along the roof rail.
-        door.spin.rotation.set(0, doorAngle(door.side > 0 ? 'r' : 'l', swing), 0);
+      for (const door of doors) {
+        const time = door.side === side ? openAmount * door.duration : 0;
+        door.spin.quaternion.fromArray(door.sample.evaluate(time)).normalize();
       }
     },
     doorMetrics() {
@@ -266,30 +405,61 @@ export async function loadCybercab() {
       };
     },
     setLamp(mode: LampMode) { lampMode = mode; },
-    /** Glass transmission is opaque from inside the shell, so the rider view hides it. */
-    setCabinView(inside: boolean) {
-      if (windshield) windshield.visible = !inside;
-      if (windshieldBezel) windshieldBezel.visible = !inside;
-      for (const name of ['door-glass-l', 'door-glass-r', 'shade-l', 'shade-r']) {
+    /** Glass is alpha-blended and double-sided, so the cabin looks through it. */
+    setCabinView(_inside: boolean) {
+      for (const name of ['windshield', 'door-glass-l', 'door-glass-r', 'quarter-glass']) {
         const part = named.get(name);
-        if (part) part.visible = !inside;
+        if (part) part.visible = true;
       }
     },
     setHazards(on: boolean) { hazardsOn = on; },
-    update(dt: number, speed: number, viewDistance = 8) {
-      applyLamp(dt);
-      for (const wheel of spins) wheel.spin.rotation[wheel.axis] -= speed * dt / WHEEL_R;
+    setPhase(next: string) {
+      if (shouldWake(phaseName, next)) wakeElapsed = 0;
+      phaseName = next;
+    },
+    lightState() {
+      return {
+        ...lastSignals,
+        blink: lastBlink,
+        wake: wakeElapsed >= 0,
+        teal: tealLevel,
+        brakeLamp: brakeLevel > 0,
+        turnLamp: turnLevel > 0,
+      };
+    },
+    wheelSpin() { return spins[0].rotation.x; },
+    wheelSteer() { return steers[0].rotation.y; },
+    update(dt: number, speed: number, _viewDistance = 8, curbRate = 0) {
       const yaw = group.rotation.y;
       const dyaw = Math.atan2(Math.sin(yaw - prevYaw), Math.cos(yaw - prevYaw));
       prevYaw = yaw;
-      const target = THREE.MathUtils.clamp(-dyaw / Math.max(dt, 1e-3) * 0.12, -0.4, 0.4);
-      steerAngle = THREE.MathUtils.damp(steerAngle, speed > 0.4 ? target : 0, 6, dt);
-      for (const steer of steers) steer.steer.rotation[steer.axis] = steerAngle;
-      const far = viewDistance > 22 && openAmount < 0.05;
-      if (lod0) lod0.visible = !far;
-      if (lod1) lod1.visible = far;
+      const yawRate = Math.abs(dyaw) > 0.35 ? 0 : dyaw / Math.max(dt, 1e-3);
+      const accel = (speed - prevSpeed) / Math.max(dt, 1e-3);
+      prevSpeed = speed;
+      const raw = vehicleSignals({ phase: phaseName, speed, accel, yawRate, curbRate });
+      const held = holdTurn(raw.turn, turnHeld, turnHeldFor, dt, raw.hazard);
+      turnHeld = held.held;
+      turnHeldFor = held.remaining;
+      const signals = { ...raw, turn: held.turn };
+      if (signals.brake) brakeHold = 0.4;
+      else brakeHold = Math.max(0, brakeHold - dt);
+      const wakeBrake = wakeElapsed >= 1 && wakeElapsed <= 1.35;
+      lampTime += dt;
+      lastBlink = blinkLit(lampTime);
+      lastSignals = signals;
+      applyLights(signals, signals.brake || brakeHold > 0 || wakeBrake);
+      if (wakeElapsed >= 0) {
+        wakeElapsed += dt;
+        if (wakeElapsed > WAKE_END) wakeElapsed = -1;
+      }
+      const roll = wheelRoll(speed, dt);
+      for (const spin of spins) spin.rotation.x += roll;
+      const target = steerTarget(yawRate, curbRate, speed);
+      steerAngle = THREE.MathUtils.damp(steerAngle, target, 6, dt);
+      for (const steer of steers) steer.rotation.y = steerAngle;
     },
   };
+  void openAmount;
   return cab;
 }
 

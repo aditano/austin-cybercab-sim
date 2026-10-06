@@ -9,7 +9,7 @@ Tesla's [Cybercab FAQ](https://www.tesla.com/support/robotaxi/cybercab) and [Rob
 1. Open the Robotaxi app and enter a destination **within the displayed service area**.
 2. Review estimated fare and wait, then confirm.
 3. Match the assigned vehicle (plate) and, for Cybercab, the **front lightbar / Megalamp color** shown in the app.
-4. At pickup the rear lightbar is red, the front lightbar shows the match color, and hazards flash while parked. A door can open when the requester's phone is detected.
+4. At pickup the rear lightbar is red and hazards flash while parked. This sim shows the violet match color on the front bar while the car is on the way, then a teal front bar at the curb. A door can open when the requester's phone is detected.
 5. Buckle up; the door closes after buckling. With doors/trunk closed, tap **Start Ride** on the touchscreen or in the app.
 6. During the trip the cabin screen shows progress, climate, and media. Support / pull-over are available.
 7. At drop-off the vehicle parks and flashes hazards; open a door, exit, complete the trip in the app.
@@ -18,7 +18,7 @@ Both Cybercab and Model Y belong to the service; this simulator always assigns C
 
 ## Megalamp (pickup identification)
 
-On 1 October 2026 Tesla's Robotaxi account named the Cybercab RGB front lightbar the **Megalamp**. The rider guide already described front lightbar color changes during pickup. The app shows the assigned color; the vehicle glows the same color so riders can find the correct car when several gold Cybercabs are at the curb. This project uses a violet match color (`#c24bff`) on the vehicle and in the phone UI, with hazard flashing at park/drop-off.
+On 1 October 2026 Tesla's Robotaxi account named the Cybercab RGB front lightbar the **Megalamp**. The rider guide already described front lightbar color changes during pickup. The app shows the assigned color; the vehicle glows the same color so riders can find the correct car when several gold Cybercabs are at the curb. This project uses a violet match color (`#c24bff`) in the phone UI and on the front bar while the cab is approaching. At the curb and while boarding, the front bar switches to teal and the hazards flash. Turn signals use the outer ends of the bars; brake lights come on while slowing.
 
 ## Austin geofence (approximate)
 
@@ -28,7 +28,7 @@ No official downloadable Tesla polygon was found. Third-party reporting on **31 
 
 The [Cybercab overview](https://www.tesla.com/robotaxi/riderguides/cybercab/en_us/GUID-669E83C2-E7DE-40F4-9DBD-C9A32E7F6DFF.html) documents two seats, no pedals or steering wheel, door open/close on the touchscreen, seat controls, support, climate, volume, a top status bar, and an app launcher during trips. An overhead stop button requests an emergency pull-over. This project recreates relevant functions with original artwork — **not a pixel-perfect copy of production software**.
 
-Published dimensions: about 1,754 mm width and 1,408 mm height. The bundled vehicle is an original model from `tools/cybercab/build.py`, not manufacturer CAD. A CC BY Sketchfab scan is not bundled.
+Published dimensions: about 1,754 mm width, 1,408 mm height, and 144 mm ground clearance. The bundled vehicle is a photo-fit model from `tools/cybercab/build.py` (about 4.35 m long, 2.635 m wheelbase), not manufacturer CAD. A CC BY Sketchfab scan is not bundled.
 
 ## Visual target
 
@@ -38,7 +38,7 @@ The default graphics mode is Auto. It scores the GPU, memory, and pointer type, 
 
 Lighting uses a Poly Haven golden-hour HDRI for image-based lighting and reflections, ACES filmic tone mapping, and sRGB output. A directional sun still casts a soft shadow. A contact shadow sits under the tires. Bloom stays gated to emissive lamps.
 
-The vehicle is a meshopt glTF coupe: champagne clearcoat paint, tinted glass, rubber tires, aero wheel covers, butterfly doors, a full-width front Megalamp, and a full-width red rear light bar. It sits with its tires on the road. During the approach and at the curb the camera sits ahead and to the curb side. Once the ride starts it follows from behind and above, looking up Congress. The cabin eye sits in the right seat and looks through the windshield.
+The vehicle is a meshopt glTF coupe: champagne clearcoat paint, tinted glass, rubber tires, aero wheel covers, butterfly doors, a full-width front light bar, and a full-width red rear light bar. It sits with its tires on the road. Wheels roll with speed and the fronts steer. The curb door opens as the rider arrives and closes in about 1.5 s after buckling. During the approach and at the curb the camera sits ahead and to the curb side. Once the ride starts it follows from behind and above, looking up Congress. The cabin eye sits between the seats and looks through the windshield.
 
 Downtown reads as Austin rather than a generic glass grid. Roads and sidewalks use CC0 asphalt and concrete maps. Building walls use a concrete facade map, and curtain-wall glass picks up the HDRI. OSM footprints still supply Frost Bank Tower, The Independent, and The Austonian; the sim adds a recognizable crown, cantilevered floors, and a spire on those footprints. The Texas State Capitol dome is just north of the bundled extract, so an artistic rose-granite capitol is placed on the published coordinate, on axis with Congress. The mesh is enlarged past the real ~95 m height so the dome stays readable through golden-hour haze at the end of the avenue. Street trees use a CC0 leaf atlas on cards, set back from the curb so they leave that sightline open. Lady Bird Lake stays the OSM shoreline. The opening view looks slightly up, north up Congress.
 
