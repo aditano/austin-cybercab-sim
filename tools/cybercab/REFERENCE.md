@@ -50,7 +50,7 @@ Two-seat closed coupe. The silhouette is a low fastback, not an open roadster an
 - Side: smooth shoulder, black rocker, large circular wheel openings. Butterfly doors are hinged on a straight axis along the roof rail (not the centerline). The shut line starts behind the front arch and ends ahead of the rear arch, from just above the rocker to the roof rail.
 - Wheels: gold aero discs with two circular grooves and a small cap, narrow black tire, brake disc and caliper tucked behind the cover. No side mirrors. Small camera pods on the front fenders and one at the tail.
 
-Door swing in the show photos is well past horizontal. The hinge opens 1.95 rad (about 112°) from the closed side panel. The side glass is one smooth opening per door; the windshield header is covered by a thin black bezel so the glass edge stays smooth.
+Door swing in the show photos is well past horizontal. The hinge opens 1.95 rad (about 112°) from the closed side panel. The side glass is one large raked opening per door, edged with a black frame. The windshield header is covered by a wider black bezel. The chin and rear bumper are separate smooth black patches so the paint break does not follow the body quads. Seats are sculpted cushions and backs rather than boxes.
 
 ## Materials
 
@@ -59,8 +59,8 @@ Chosen for glTF PBR (`KHR_materials_clearcoat`, `KHR_materials_transmission`, `K
 | Surface | Intent | Principled settings |
 | --- | --- | --- |
 | Champagne paint | Warm satin metallic with a clear layer, close to the show cars’ molded gold | Base `#C9A66B`, metallic 0.72, roughness 0.34, coat weight 1, coat roughness 0.07, coat IOR 1.5 |
-| Windshield | Tinted so the street is still visible from the seat | Transmission 1, IOR 1.52, roughness 0.04, base `#8AA0A8` |
-| Side glass | Darker than the windshield | Transmission 1, IOR 1.52, roughness 0.06, base `#3E4C52` |
+| Windshield | Dark tint, street still readable from the seat | Transmission 0.82, IOR 1.52, roughness 0.04, base `#16303A` |
+| Side glass | Darker than the windshield | Transmission 0.62, IOR 1.52, roughness 0.05, base `#0E1A20` |
 | Rocker, chin, bumper, arch lips | Satin black | Metallic 0.08, roughness 0.46, `#141618` |
 | Aero covers | Same champagne family, slightly flatter | Metallic 0.55, roughness 0.38, coat 0.4 |
 | Tires | Rubber | Roughness 0.92, `#121314` |
