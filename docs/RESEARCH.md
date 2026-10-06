@@ -34,7 +34,7 @@ Published dimensions: about 1,754 mm width and 1,408 mm height. The bundled vehi
 
 A publicly posted high-fidelity teleoperation / city-drive clip (chase camera, reflective paint, dense parked traffic, HUD speedometer) informed lighting, materials, chase camera, and traffic density. This remains a browser Three.js reconstruction with PBR materials, environment reflections, optional SSAO, bloom, and SMAA — not Unreal Engine or photogrammetry.
 
-The default graphics mode is balanced (soft shadows, lamp bloom, SMAA, no SSAO) so the ride keeps real-time on a mid laptop. The top-right control cycles balanced, cinematic (SSAO and a larger shadow map), ultra (heavier shadow map and pixel ratio), and performance. Software GL stays on performance. Simulation steps catch up to about a quarter-second per frame so a slow paint does not freeze the cab a block away.
+The default graphics mode is Auto. It scores the GPU, memory, and pointer type, then adapts from measured frame time with hysteresis. Manual Low / Medium / High / Ultra persist in localStorage. Software GL stays on Low. Simulation steps catch up to about a quarter-second per frame so a slow paint does not freeze the cab a block away.
 
 Lighting uses a Poly Haven golden-hour HDRI for image-based lighting and reflections, ACES filmic tone mapping, and sRGB output. A directional sun still casts a soft shadow. A contact shadow sits under the tires. Bloom stays gated to emissive lamps.
 

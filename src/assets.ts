@@ -1,0 +1,300 @@
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
+import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import type { Quality } from './logic';
+
+export type StreetKind = 'sedan' | 'sedan-sports' | 'suv' | 'suv-luxury' | 'van' | 'pickup' | 'taxi' | 'police' | 'hatch';
+export type PropKind = 'lamp' | 'hydrant' | 'bench' | 'trash' | 'planter' | 'tree' | 'cone' | 'dumpster' | 'stop' | 'street-sign' | 'warn' | 'signal' | 'pole';
+
+type PropId =
+  | 'lamp-hi' | 'lamp-lo' | 'hydrant' | 'bench' | 'trash' | 'planter-hi' | 'planter-lo'
+  | 'tree-lg' | 'tree-sm' | 'cone' | 'dumpster' | 'stop' | 'street-sign' | 'warn' | 'signal' | 'pole';
+
+type Template = {
+  scene: THREE.Group;
+  animations: THREE.AnimationClip[];
+  height: number;
+  length: number;
+  minY: number;
+  meshCount: number;
+};
+
+const CAR_FILES: Record<StreetKind, string> = {
+  sedan: 'cars/sedan.glb',
+  'sedan-sports': 'cars/sedan-sports.glb',
+  hatch: 'cars/hatchback-sports.glb',
+  suv: 'cars/suv.glb',
+  'suv-luxury': 'cars/suv-luxury.glb',
+  van: 'cars/van.glb',
+  pickup: 'cars/truck.glb',
+  taxi: 'cars/taxi.glb',
+  police: 'cars/police.glb',
+};
+
+const PROP_FILES: Record<PropId, string> = {
+  'lamp-hi': 'props/lamp.glb',
+  'lamp-lo': 'props/light-curved.glb',
+  hydrant: 'props/hydrant.glb',
+  bench: 'props/bench.glb',
+  trash: 'props/trash.glb',
+  'planter-hi': 'props/planter.glb',
+  'planter-lo': 'props/planter-kenney.glb',
+  'tree-lg': 'props/tree-large.glb',
+  'tree-sm': 'props/tree-small.glb',
+  cone: 'props/construction-cone.glb',
+  dumpster: 'props/dumpster.glb',
+  stop: 'props/road-sign-stop.glb',
+  'street-sign': 'props/road-sign-street.glb',
+  warn: 'props/road-sign-warning.glb',
+  signal: 'props/traffic-light.glb',
+  pole: 'props/electricity-pole.glb',
+};
+
+const PEOPLE = [
+  { id: 'soldier', file: 'people/soldier.glb', walk: 'Walk', idle: 'Idle' },
+  { id: 'xbot', file: 'people/xbot.glb', walk: 'walk', idle: 'idle' },
+] as const;
+
+const TARGET_CAR_LENGTH: Record<StreetKind, number> = {
+  sedan: 4.45, 'sedan-sports': 4.35, hatch: 4.2, suv: 4.7, 'suv-luxury': 4.85,
+  van: 5.05, pickup: 5.2, taxi: 4.5, police: 4.6,
+};
+
+const TARGET_PROP_HEIGHT: Partial<Record<PropId, number>> = {
+  'lamp-hi': 6.4, 'lamp-lo': 8.2, hydrant: 0.78, bench: 0.92, trash: 1.05,
+  'planter-hi': 0.62, 'planter-lo': 0.7, 'tree-lg': 9.4, 'tree-sm': 6.2,
+  cone: 0.72, dumpster: 1.35, stop: 3.1, 'street-sign': 3.2, warn: 3.1, signal: 5.4, pole: 9.5,
+};
+
+const SHIRTS = [0xbf5700, 0x1f2a44, 0xf4f1ea, 0x2c3338, 0x3d4c3a, 0x6e2430, 0xd7d2c8, 0x243026];
+
+function url(file: string) {
+  return `${import.meta.env.BASE_URL}models/${file}`;
+}
+
+function measure(root: THREE.Object3D) {
+  const box = new THREE.Box3().setFromObject(root);
+  const size = box.getSize(new THREE.Vector3());
+  return { box, size, height: size.y, length: Math.max(size.x, size.z), minY: box.min.y };
+}
+
+function sitOnGround(root: THREE.Object3D) {
+  const box = new THREE.Box3().setFromObject(root);
+  root.position.y -= box.min.y;
+}
+
+function prepare(root: THREE.Object3D, shadows: boolean) {
+  root.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    obj.castShadow = shadows;
+    obj.receiveShadow = shadows;
+    const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (const mat of mats) {
+      if (mat instanceof THREE.MeshStandardMaterial || mat instanceof THREE.MeshPhysicalMaterial) {
+        mat.envMapIntensity = Math.max(mat.envMapIntensity, 0.85);
+      }
+    }
+  });
+}
+
+function firstMesh(root: THREE.Object3D): THREE.Mesh | null {
+  let found: THREE.Mesh | null = null;
+  root.traverse((obj) => {
+    if (!found && obj instanceof THREE.Mesh) found = obj;
+  });
+  return found;
+}
+
+function resolveProp(kind: PropKind, quality: Quality): PropId | null {
+  const hi = quality === 'high' || quality === 'ultra';
+  switch (kind) {
+    case 'lamp': return hi ? 'lamp-hi' : 'lamp-lo';
+    case 'hydrant': return quality === 'low' ? null : 'hydrant';
+    case 'bench': return quality === 'low' ? null : 'bench';
+    case 'trash': return quality === 'low' ? null : 'trash';
+    case 'planter': return hi ? 'planter-hi' : 'planter-lo';
+    case 'tree': return quality === 'low' ? 'tree-sm' : 'tree-lg';
+    case 'cone': return quality === 'low' ? null : 'cone';
+    case 'dumpster': return 'dumpster';
+    case 'stop': return 'stop';
+    case 'street-sign': return 'street-sign';
+    case 'warn': return 'warn';
+    case 'signal': return 'signal';
+    case 'pole': return 'pole';
+    default: {
+      const _never: never = kind;
+      return _never;
+    }
+  }
+}
+
+export type SpawnedPerson = {
+  group: THREE.Group;
+  mixer: THREE.AnimationMixer;
+  walk: THREE.AnimationAction;
+  idle: THREE.AnimationAction;
+};
+
+export type StreetAssets = {
+  spawnCar(kind: StreetKind, paint: number): THREE.Group;
+  spawnProp(kind: PropKind, quality: Quality): THREE.Object3D | null;
+  instanceProp(kind: PropKind, quality: Quality, count: number): THREE.InstancedMesh | null;
+  propScale(kind: PropKind, quality: Quality): { scale: number; lift: number } | null;
+  spawnPerson(seed: number, quality: Quality): SpawnedPerson | null;
+  materials(): THREE.Material[];
+  ready: Promise<void>;
+};
+
+export function createStreetAssets(): StreetAssets {
+  const loader = new GLTFLoader();
+  loader.setMeshoptDecoder(MeshoptDecoder);
+  const cars = new Map<StreetKind, Template>();
+  const props = new Map<PropId, Template>();
+  const people: { id: string; template: Template; walk: string; idle: string }[] = [];
+  const collected: THREE.Material[] = [];
+
+  async function loadOne(file: string): Promise<Template> {
+    const gltf = await loader.loadAsync(url(file));
+    const scene = gltf.scene;
+    scene.updateMatrixWorld(true);
+    const { height, length, minY } = measure(scene);
+    let meshCount = 0;
+    scene.traverse((obj) => { if (obj instanceof THREE.Mesh) meshCount += 1; });
+    return { scene, animations: gltf.animations ?? [], height, length, minY, meshCount };
+  }
+
+  const ready = (async () => {
+    const carLoads = (Object.keys(CAR_FILES) as StreetKind[]).map(async (kind) => {
+      cars.set(kind, await loadOne(CAR_FILES[kind]));
+    });
+    const propLoads = (Object.keys(PROP_FILES) as PropId[]).map(async (id) => {
+      props.set(id, await loadOne(PROP_FILES[id]));
+    });
+    const peopleLoads = PEOPLE.map(async (spec) => {
+      people.push({ id: spec.id, template: await loadOne(spec.file), walk: spec.walk, idle: spec.idle });
+    });
+    await Promise.all([...carLoads, ...propLoads, ...peopleLoads]);
+  })();
+
+  function cloneTemplate(template: Template, shadows: boolean) {
+    const clone = SkeletonUtils.clone(template.scene) as THREE.Group;
+    prepare(clone, shadows);
+    clone.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) {
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        mats.forEach((mat) => collected.push(mat));
+      }
+    });
+    return clone;
+  }
+
+  function templateFor(kind: PropKind, quality: Quality) {
+    const id = resolveProp(kind, quality);
+    if (!id) return null;
+    const template = props.get(id);
+    if (!template) return null;
+    return { id, template };
+  }
+
+  return {
+    ready,
+    materials: () => collected,
+    spawnCar(kind, paint) {
+      const template = cars.get(kind) ?? cars.get('sedan');
+      const group = new THREE.Group();
+      if (!template) return group;
+      const model = cloneTemplate(template, true);
+      const scale = TARGET_CAR_LENGTH[kind] / Math.max(template.length, 0.01);
+      model.scale.setScalar(scale);
+      sitOnGround(model);
+      model.traverse((obj) => {
+        if (!(obj instanceof THREE.Mesh)) return;
+        if (!/^body$/i.test(obj.name)) return;
+        const src = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+        if (src instanceof THREE.MeshStandardMaterial || src instanceof THREE.MeshPhysicalMaterial) {
+          const mat = src.clone();
+          mat.color.setHex(paint);
+          mat.metalness = Math.max(mat.metalness, 0.42);
+          mat.roughness = Math.min(mat.roughness, 0.38);
+          mat.envMapIntensity = 1.4;
+          obj.material = mat;
+          collected.push(mat);
+        }
+      });
+      group.add(model);
+      group.userData.wheels = [] as THREE.Object3D[];
+      model.traverse((obj) => {
+        if (/wheel/i.test(obj.name)) group.userData.wheels.push(obj);
+      });
+      return group;
+    },
+    spawnProp(kind, quality) {
+      const resolved = templateFor(kind, quality);
+      if (!resolved) return null;
+      const model = cloneTemplate(resolved.template, quality !== 'low');
+      const target = TARGET_PROP_HEIGHT[resolved.id] ?? resolved.template.height;
+      model.scale.setScalar(target / Math.max(resolved.template.height, 0.01));
+      sitOnGround(model);
+      model.userData.prop = resolved.id;
+      return model;
+    },
+    instanceProp(kind, quality, count) {
+      const resolved = templateFor(kind, quality);
+      if (!resolved || resolved.template.meshCount !== 1 || count < 1) return null;
+      const mesh = firstMesh(resolved.template.scene);
+      if (!mesh) return null;
+      const inst = new THREE.InstancedMesh(mesh.geometry, mesh.material, count);
+      inst.castShadow = quality !== 'low';
+      inst.receiveShadow = quality !== 'low';
+      inst.frustumCulled = true;
+      collected.push(mesh.material as THREE.Material);
+      return inst;
+    },
+    propScale(kind, quality) {
+      const resolved = templateFor(kind, quality);
+      if (!resolved) return null;
+      const target = TARGET_PROP_HEIGHT[resolved.id] ?? resolved.template.height;
+      const scale = target / Math.max(resolved.template.height, 0.01);
+      return { scale, lift: -resolved.template.minY * scale };
+    },
+    spawnPerson(seed, quality) {
+      if (!people.length) return null;
+      const spec = people[seed % (quality === 'low' ? 1 : people.length)];
+      const model = cloneTemplate(spec.template, quality !== 'low');
+      const fitted = 1.72 / Math.max(spec.template.height, 0.01);
+      model.scale.setScalar(fitted * (0.94 + (seed % 5) * 0.03));
+      sitOnGround(model);
+      const tint = new THREE.Color(SHIRTS[seed % SHIRTS.length]);
+      model.traverse((obj) => {
+        if (!(obj instanceof THREE.Mesh)) return;
+        const src = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+        if (!(src instanceof THREE.MeshStandardMaterial) && !(src instanceof THREE.MeshPhysicalMaterial)) return;
+        if (/visor|eye|joint/i.test(src.name) || /visor|eye/i.test(obj.name)) return;
+        const mat = src.clone();
+        if (seed % 2 === 0) mat.color.lerp(tint, 0.4);
+        else mat.color.multiply(tint);
+        obj.material = mat;
+        collected.push(mat);
+      });
+      const group = new THREE.Group();
+      group.add(model);
+      const mixer = new THREE.AnimationMixer(model);
+      const walkClip = THREE.AnimationClip.findByName(spec.template.animations, spec.walk) ?? spec.template.animations[0];
+      const idleClip = THREE.AnimationClip.findByName(spec.template.animations, spec.idle) ?? walkClip;
+      const walk = mixer.clipAction(walkClip);
+      const idle = mixer.clipAction(idleClip);
+      walk.enabled = true;
+      idle.enabled = true;
+      walk.play();
+      idle.play();
+      idle.setEffectiveWeight(0);
+      return { group, mixer, walk, idle };
+    },
+  };
+}
+
+export function kindFromIndex(index: number): StreetKind {
+  const kinds: StreetKind[] = ['sedan', 'suv', 'hatch', 'van', 'pickup', 'taxi', 'sedan-sports', 'suv-luxury', 'police'];
+  return kinds[index % kinds.length];
+}

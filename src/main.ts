@@ -10,13 +10,16 @@ import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { createWorld, loadMapData } from './world';
 import { loadCybercab, type Cybercab } from './vehicle';
 import { createCityLife } from './life';
+import { createStreetAssets } from './assets';
+import { createLighting } from './lighting';
 import {
   APPROACH_RUNWAY, AUSTIN_ROBOTAXI_GEOFENCE, CAPITOL, CONGRESS_ROUTE, CURB_PULL, DROPOFF, GEOFENCE_NOTE, MEGALAMP,
   PICKUP, ROAD_Y, STOP_INSET, VEHICLE_LABEL, VEHICLE_PLATE, measurePath, pointInRing, project, samplePath,
 } from './geo';
 import {
-  DESTINATIONS, blockedSpeed, defaultQuality, parseSnapshot, pixelRatioFor, shadowMapSize, togglePhone,
-  type Quality, type RideSnapshot,
+  DESTINATIONS, GRAPHICS_KEY, QUALITY_LABEL, adaptQuality, blockedSpeed,
+  emptyAdaptState, graphicsFor, parseGraphicsStore, parseSnapshot, pixelRatioFor, resolvedQuality,
+  togglePhone, type GraphicsToggles, type Quality, type QualityMode, type RideSnapshot,
 } from './logic';
 import './style.css';
 
@@ -25,7 +28,16 @@ type Cam = 'walk' | 'chase' | 'cabin';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `<canvas id="scene"></canvas><div class="vignette"></div>
-<header><a class="brand" href="./"><span class="brand-icon">C</span> CYBERCAB <span class="brand-sub">AUSTIN EXPERIENCE</span></a><div class="live"><i></i> AUSTIN, TX <span>SERVICE AREA · ~288 MI²</span></div><button id="settings" class="round" aria-label="Toggle graphics quality">◈</button></header>
+<header><a class="brand" href="./"><span class="brand-icon">C</span> CYBERCAB <span class="brand-sub">AUSTIN EXPERIENCE</span></a><div class="live"><i></i> AUSTIN, TX <span>SERVICE AREA · ~288 MI²</span></div><button id="settings" class="round" aria-label="Open graphics settings" aria-expanded="false">◈</button></header>
+<div id="gfx-menu" class="gfx-menu" hidden>
+  <p class="gfx-kicker">Graphics</p>
+  <div class="gfx-modes">${['auto', 'low', 'medium', 'high', 'ultra'].map((mode) => `<button type="button" data-mode="${mode}">${mode === 'auto' ? 'Auto' : mode[0].toUpperCase() + mode.slice(1)}</button>`).join('')}</div>
+  <p class="gfx-current" id="gfx-current"></p>
+  <label class="gfx-toggle"><input type="checkbox" data-toggle="shadows"> Shadows</label>
+  <label class="gfx-toggle"><input type="checkbox" data-toggle="aa"> Anti-aliasing</label>
+  <label class="gfx-toggle"><input type="checkbox" data-toggle="post"> Post-process</label>
+  <p class="gfx-note">Auto picks a preset from this device, then eases up or down from measured frame time. Low uses lighter street models.</p>
+</div>
 <aside class="chapter"><span class="eyebrow">CONGRESS AVENUE · AUSTIN</span><h1>Golden hour<br>on Congress.</h1><p>The Capitol closes the avenue.<br>Lady Bird Lake is behind you.<br>Match the Megalamp, then ride.</p><div class="chapter-line"></div><span class="small-label">01 / CONFIRM YOUR RIDE</span></aside>
 <div class="location"><span class="location-dot">⌖</span><div><b id="location-name">Congress & 2nd</b><span id="location-detail">DOWNTOWN · CAPITOL NORTH · LAKE SOUTH</span></div></div>
 <div class="hud"><div class="speedo"><b id="speed">00</b><small>MPH</small><span id="gear">P</span></div></div>
@@ -94,7 +106,8 @@ scene.add(sun);
 scene.add(sun.target);
 
 const world = createWorld(scene, (text) => setBoot(text, text.startsWith('Building') ? 55 : 35));
-let cab: Cybercab;
+let cab!: Cybercab;
+let cabMounted = false;
 
 const laneOffset = new THREE.Vector3(4.7, 0, 1.5);
 const centerline = CONGRESS_ROUTE.map(([lon, lat]) => project(lon, lat).add(laneOffset));
@@ -128,6 +141,15 @@ scene.add(padGlow);
 
 const life = createCityLife(scene, route, cumulative, routeLength);
 
+function restyleWorld() {
+  const parked = world.dress(assets, quality);
+  life.populate(assets, quality);
+  lighting.hookObject(scene);
+  const picks = [...life.objects(), ...parked];
+  if (cabMounted) picks.unshift(cab.group);
+  lighting.setSelects(picks);
+}
+
 const gl = renderer.getContext();
 const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
 const gpu = debugInfo ? String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || '') : '';
@@ -154,6 +176,9 @@ smaaPass.enabled = !softwareGl;
 composer.addPass(smaaPass);
 composer.addPass(new OutputPass());
 
+const lighting = createLighting(renderer, scene, camera, sun, composer, sunOffset);
+const assets = createStreetAssets();
+
 let phase: Phase = 'explore';
 let belted = false;
 let elapsed = 0;
@@ -170,8 +195,24 @@ let doorRequested = false;
 let hold = 0;
 let curbState = 0;
 let destinationId = 'congress';
-let quality: Quality = defaultQuality({ software: softwareGl, coarse: coarsePointer });
-let qualityAdapted = false;
+const storedGraphics = (() => {
+  try { return parseGraphicsStore(localStorage.getItem(GRAPHICS_KEY)); } catch { return null; }
+})();
+const hardware = {
+  software: softwareGl,
+  coarse: coarsePointer,
+  gpu,
+  deviceMemory: (navigator as Navigator & { deviceMemory?: number }).deviceMemory,
+  cores: navigator.hardwareConcurrency,
+  width: innerWidth,
+  height: innerHeight,
+  dpr: devicePixelRatio,
+};
+let qualityMode: QualityMode = storedGraphics?.mode ?? 'auto';
+let graphicsOverrides: Partial<GraphicsToggles> | undefined = storedGraphics?.overrides;
+let quality: Quality = softwareGl ? 'low' : resolvedQuality(qualityMode, hardware);
+let graphics = graphicsFor(quality, graphicsOverrides);
+let adaptState = emptyAdaptState();
 let stickX = 0;
 let stickY = 0;
 const RIDE_KEY = 'cybercab-ride';
@@ -559,41 +600,84 @@ window.addEventListener('keydown', (event) => {
 });
 window.addEventListener('keyup', e => keys.delete(e.key.toLowerCase()));
 window.addEventListener('blur', () => keys.clear());
+function persistGraphics() {
+  try { localStorage.setItem(GRAPHICS_KEY, JSON.stringify({ v: 1, mode: qualityMode, overrides: graphicsOverrides })); } catch { /* private mode */ }
+}
+
+function gfxLabel() {
+  const preset = QUALITY_LABEL[quality];
+  return qualityMode === 'auto' ? `Auto · ${preset}` : preset;
+}
+
+function syncGfxMenu() {
+  const menu = document.getElementById('gfx-menu');
+  if (!menu) return;
+  menu.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((button) => {
+    button.classList.toggle('on', button.dataset.mode === qualityMode);
+  });
+  const current = document.getElementById('gfx-current');
+  if (current) current.textContent = softwareGl ? 'Software graphics stay on Low.' : `Preset in use: ${gfxLabel()}`;
+  const shadows = menu.querySelector<HTMLInputElement>('[data-toggle="shadows"]');
+  const aa = menu.querySelector<HTMLInputElement>('[data-toggle="aa"]');
+  const post = menu.querySelector<HTMLInputElement>('[data-toggle="post"]');
+  if (shadows) shadows.checked = graphics.shadows;
+  if (aa) aa.checked = graphics.aa;
+  if (post) post.checked = graphics.post;
+}
+
 function applyQuality(next: Quality, announce = true, fromUser = false) {
-  if (fromUser) qualityAdapted = false;
-  if (softwareGl && (next === 'cinematic' || next === 'ultra')) {
-    if (announce) toast('Software graphics stay on the performance preset.');
-    next = 'performance';
+  if (softwareGl && next !== 'low') {
+    if (announce) toast('Software graphics stay on Low.');
+    next = 'low';
   }
   quality = next;
-  const perf = quality === 'performance';
-  const ultra = quality === 'ultra';
-  const cine = quality === 'cinematic' || ultra;
-  const ratio = pixelRatioFor(devicePixelRatio, quality, { software: softwareGl, coarse: coarsePointer });
-  const shadow = shadowMapSize(quality, coarsePointer);
+  graphics = graphicsFor(quality, graphicsOverrides);
+  const ratio = pixelRatioFor(devicePixelRatio, quality, { software: softwareGl, coarse: coarsePointer }, graphics.pixelScale);
   renderer.setPixelRatio(ratio);
   renderer.setSize(innerWidth, innerHeight);
   composer.setPixelRatio(ratio);
   composer.setSize(innerWidth, innerHeight);
-  renderer.shadowMap.enabled = shadow > 0;
-  sun.castShadow = shadow > 0;
-  if (shadow > 0) sun.shadow.mapSize.set(shadow, shadow);
-  sun.shadow.radius = ultra ? 8 : cine ? 4 : 2.5;
-  if (sun.shadow.map) { sun.shadow.map.dispose(); sun.shadow.map = null; }
-  if (ssaoPass) ssaoPass.enabled = cine && !coarsePointer;
+  renderer.shadowMap.enabled = graphics.shadows && graphics.shadowSize > 0;
+  lighting.apply(graphics, quality, softwareGl);
+  lighting.hookObject(scene);
+  if (ssaoPass) ssaoPass.enabled = graphics.post && quality !== 'low' && quality !== 'medium' && !coarsePointer;
   bloomPass.threshold = 0.96;
-  bloomPass.strength = perf ? 0.04 : ultra ? 0.16 : cine ? 0.12 : 0.08;
-  bloomPass.radius = ultra ? 0.42 : 0.32;
-  smaaPass.enabled = !perf && !coarsePointer;
-  scene.environmentIntensity = ultra ? 1.25 : perf ? 0.9 : 1.15;
-  const label = ultra ? 'Ultra graphics' : cine ? 'Cinematic graphics' : perf ? 'Performance graphics' : 'Balanced graphics';
-  document.querySelector('#settings')?.setAttribute('aria-label', `${label}. Activate to change graphics quality.`);
-  if (announce) toast(label);
+  bloomPass.strength = !graphics.post ? 0.04 : quality === 'ultra' ? 0.16 : quality === 'high' ? 0.12 : 0.08;
+  bloomPass.radius = quality === 'ultra' ? 0.42 : 0.32;
+  smaaPass.enabled = graphics.aa && !coarsePointer && !softwareGl;
+  scene.environmentIntensity = quality === 'ultra' ? 1.25 : quality === 'low' ? 0.9 : 1.15;
+  document.querySelector('#settings')?.setAttribute('aria-label', `${gfxLabel()} graphics. Activate to open settings.`);
+  syncGfxMenu();
+  if (announce) toast(`${gfxLabel()} graphics`);
 }
 applyQuality(quality, false);
+const gfxMenu = document.getElementById('gfx-menu');
 bind('settings', () => {
-  const order: Quality[] = ['balanced', 'cinematic', 'ultra', 'performance'];
-  applyQuality(order[(order.indexOf(quality) + 1) % order.length], true, true);
+  if (!gfxMenu) return;
+  const open = gfxMenu.hasAttribute('hidden');
+  gfxMenu.toggleAttribute('hidden', !open);
+  document.getElementById('settings')?.setAttribute('aria-expanded', String(open));
+  syncGfxMenu();
+});
+gfxMenu?.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((button) => {
+  button.addEventListener('click', () => {
+    const mode = button.dataset.mode;
+    if (mode !== 'auto' && mode !== 'low' && mode !== 'medium' && mode !== 'high' && mode !== 'ultra') return;
+    qualityMode = mode;
+    adaptState = emptyAdaptState();
+    applyQuality(softwareGl ? 'low' : resolvedQuality(qualityMode, hardware), true, true);
+    persistGraphics();
+    void restyleWorld();
+  });
+});
+gfxMenu?.querySelectorAll<HTMLInputElement>('[data-toggle]').forEach((input) => {
+  input.addEventListener('change', () => {
+    const key = input.dataset.toggle;
+    if (key !== 'shadows' && key !== 'aa' && key !== 'post') return;
+    graphicsOverrides = { ...graphicsOverrides, [key]: input.checked };
+    applyQuality(quality, false, true);
+    persistGraphics();
+  });
 });
 bind('show-phone', () => { phoneVisible = true; renderUI(); });
 document.querySelector('#boot-retry')?.addEventListener('click', () => location.reload());
@@ -781,6 +865,7 @@ function update(dt: number) {
   updateCamera(dt);
   sun.position.copy(cab.group.position).add(sunOffset);
   sun.target.position.copy(cab.group.position);
+  lighting.update(cab.group.position);
   const span = Math.max(1, dropoffDist - pickupDist);
   document.querySelector<HTMLElement>('#progress-fill')!.style.width = `${THREE.MathUtils.clamp((distance - pickupDist) / span, 0, 1) * 100}%`;
   document.querySelector('#speed')!.textContent = String(Math.round(speedMps * 2.237)).padStart(2, '0');
@@ -792,19 +877,17 @@ let saveTimer = 0;
 let frame = 0;
 const frameTimes: number[] = [];
 function noteFrame(dt: number) {
-  if (softwareGl || qualityAdapted || quality === 'performance' || document.hidden) return;
+  if (softwareGl || qualityMode !== 'auto' || document.hidden) return;
   frameTimes.push(dt);
   if (frameTimes.length < 45) return;
   const avg = frameTimes.reduce((sum, sample) => sum + sample, 0) / frameTimes.length;
   frameTimes.length = 0;
-  if (avg <= 0.034) return;
-  const order: Quality[] = ['ultra', 'cinematic', 'balanced', 'performance'];
-  const index = order.indexOf(quality);
-  const next = order[Math.min(order.length - 1, index + 1)];
-  if (next === quality) return;
-  qualityAdapted = true;
-  applyQuality(next, false);
-  toast('Graphics eased down to hold the frame rate.');
+  const adapted = adaptQuality(quality, avg, adaptState);
+  adaptState = adapted.state;
+  if (!adapted.changed) return;
+  applyQuality(adapted.preset, false);
+  toast(adapted.changed === 'down' ? 'Graphics eased down to hold the frame rate.' : 'Graphics stepped up.');
+  void restyleWorld();
 }
 function animate(now: number) {
   requestAnimationFrame(animate);
@@ -860,6 +943,7 @@ function restoreRide() {
 
 function mountCab(loaded: Cybercab) {
   cab = loaded;
+  cabMounted = true;
   scene.add(cab.group);
   cab.group.position.copy(sample(stageDist).position);
   cab.group.position.y = ROAD_Y;
@@ -952,9 +1036,13 @@ void Promise.all([
     pmrem.dispose();
   }).catch(() => undefined),
   world.ready,
+  assets.ready,
 ]).then(([loaded]) => {
+  setBoot('Dressing the avenue', 88);
+  restyleWorld();
   setBoot('Placing the Cybercab', 92);
   mountCab(loaded);
+  restyleWorld();
   composer.render();
   hideBoot();
 }).catch((error) => {

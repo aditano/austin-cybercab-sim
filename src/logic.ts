@@ -1,6 +1,62 @@
 /** Pure ride rules. No Three.js, so node can test them without a GPU. */
 
-export type Quality = 'balanced' | 'cinematic' | 'ultra' | 'performance';
+export type Quality = 'low' | 'medium' | 'high' | 'ultra';
+export type QualityMode = 'auto' | Quality;
+export type ReflectionMode = 'off' | 'ibl' | 'probe' | 'ssr';
+export type LodBand = 'near' | 'mid' | 'far';
+export type TextureQuality = 'low' | 'high';
+
+export type GraphicsToggles = {
+  pixelScale: number;
+  shadows: boolean;
+  shadowSize: number;
+  cascades: number;
+  reflections: ReflectionMode;
+  lod: LodBand;
+  aa: boolean;
+  post: boolean;
+  textures: TextureQuality;
+};
+
+export type HardwareProfile = {
+  software: boolean;
+  coarse: boolean;
+  gpu?: string;
+  deviceMemory?: number;
+  cores?: number;
+  width?: number;
+  height?: number;
+  dpr?: number;
+};
+
+export type StoredGraphics = {
+  v: 1;
+  mode: QualityMode;
+  overrides?: Partial<GraphicsToggles>;
+};
+
+export type AdaptState = {
+  slowWindows: number;
+  fastWindows: number;
+  cooldown: number;
+};
+
+export const GRAPHICS_KEY = 'cybercab-graphics';
+export const QUALITY_ORDER: readonly Quality[] = ['low', 'medium', 'high', 'ultra'];
+
+export const PRESET_GRAPHICS: Record<Quality, GraphicsToggles> = {
+  low: { pixelScale: 1, shadows: false, shadowSize: 0, cascades: 0, reflections: 'ibl', lod: 'near', aa: false, post: false, textures: 'low' },
+  medium: { pixelScale: 1.25, shadows: true, shadowSize: 1024, cascades: 2, reflections: 'ibl', lod: 'mid', aa: true, post: false, textures: 'high' },
+  high: { pixelScale: 1.5, shadows: true, shadowSize: 2048, cascades: 3, reflections: 'probe', lod: 'far', aa: true, post: true, textures: 'high' },
+  ultra: { pixelScale: 1.75, shadows: true, shadowSize: 2048, cascades: 4, reflections: 'ssr', lod: 'far', aa: true, post: true, textures: 'high' },
+};
+
+export const QUALITY_LABEL: Record<Quality, string> = {
+  low: 'Low',
+  medium: 'Medium',
+  high: 'High',
+  ultra: 'Ultra',
+};
 
 export type RestorablePhase = 'dispatch' | 'pickup' | 'boarded' | 'ride' | 'arrived' | 'exited';
 
@@ -43,23 +99,168 @@ export function doorAngle(side: 'r' | 'l', open: number): number {
   return (side === 'r' ? 1 : -1) * amount * DOOR_SWING;
 }
 
-export function defaultQuality(flags: { software: boolean; coarse: boolean }): Quality {
-  if (flags.software || flags.coarse) return 'performance';
-  return 'balanced';
+export function isQuality(value: string): value is Quality {
+  return (QUALITY_ORDER as readonly string[]).includes(value);
 }
 
-export function pixelRatioFor(dpr: number, quality: Quality, flags: { software: boolean; coarse: boolean }): number {
-  if (flags.software || quality === 'performance') return 1;
+export function isQualityMode(value: string): value is QualityMode {
+  return value === 'auto' || isQuality(value);
+}
+
+export function graphicsFor(quality: Quality, overrides?: Partial<GraphicsToggles> | null): GraphicsToggles {
+  return { ...PRESET_GRAPHICS[quality], ...(overrides ?? {}) };
+}
+
+export function scoreHardware(profile: HardwareProfile): number {
+  if (profile.software) return 0;
+  let score = 40;
+  const gpu = (profile.gpu || '').toLowerCase();
+  if (/nvidia|geforce|rtx|radeon rx|arc a7|apple m[1-9]|metal/i.test(gpu)) score += 28;
+  else if (/rtx 40|rtx 50|rx 7|rx 9|m[234] (pro|max|ultra)/i.test(gpu)) score += 36;
+  else if (/iris|uhd|hd graphics|adreno|mali|xclipse|apple gpu|powervr/i.test(gpu)) score += 4;
+  else if (/intel/i.test(gpu)) score += 6;
+  const mem = profile.deviceMemory ?? 0;
+  if (mem > 0 && mem <= 4) score -= 18;
+  else if (mem >= 16) score += 16;
+  else if (mem >= 8) score += 8;
+  const cores = profile.cores ?? 0;
+  if (cores > 0 && cores <= 4) score -= 8;
+  else if (cores >= 12) score += 10;
+  else if (cores >= 8) score += 5;
+  if (profile.coarse) score -= 18;
+  const pixels = (profile.width ?? 1280) * (profile.height ?? 720) * (profile.dpr ?? 1);
+  if (pixels > 8_000_000) score -= 10;
+  else if (pixels < 1_200_000) score -= 6;
+  return Math.max(0, Math.min(100, score));
+}
+
+export function autoQualityPreset(profile: HardwareProfile): Quality {
+  if (profile.software) return 'low';
+  if (profile.coarse && (profile.deviceMemory ?? 8) <= 4) return 'low';
+  const score = scoreHardware(profile);
+  if (score < 28) return 'low';
+  if (score < 52) return 'medium';
+  if (score < 78) return 'high';
+  return 'ultra';
+}
+
+export function defaultQuality(flags: HardwareProfile): Quality {
+  return autoQualityPreset(flags);
+}
+
+export function pixelRatioFor(dpr: number, quality: Quality, flags: { software: boolean; coarse: boolean }, scale = PRESET_GRAPHICS[quality].pixelScale): number {
+  if (flags.software || quality === 'low') return 1;
   const cap = flags.coarse
-    ? quality === 'ultra' ? 1.25 : quality === 'cinematic' ? 1.15 : 1.1
-    : quality === 'ultra' ? 1.75 : quality === 'cinematic' ? 1.5 : 1.25;
+    ? quality === 'ultra' ? 1.25 : quality === 'high' ? 1.15 : 1.1
+    : scale;
   return Math.min(Math.max(dpr, 1), cap);
 }
 
 export function shadowMapSize(quality: Quality, coarse: boolean): number {
-  if (quality === 'performance') return 0;
-  if (coarse || quality === 'balanced') return 1024;
-  return 2048;
+  if (quality === 'low') return 0;
+  if (coarse) return quality === 'medium' ? 512 : 1024;
+  return PRESET_GRAPHICS[quality].shadowSize;
+}
+
+export function shadowCascades(quality: Quality): number {
+  return PRESET_GRAPHICS[quality].cascades;
+}
+
+export function resolvedQuality(mode: QualityMode, profile: HardwareProfile): Quality {
+  return mode === 'auto' ? autoQualityPreset(profile) : mode;
+}
+
+export type StreetBudget = {
+  movingCars: number;
+  parked: number;
+  peds: number;
+  treeStride: number;
+  scans: boolean;
+  propFar: number;
+};
+
+export function streetBudget(quality: Quality): StreetBudget {
+  switch (quality) {
+    case 'low':
+      return { movingCars: 4, parked: 6, peds: 5, treeStride: 72, scans: false, propFar: 70 };
+    case 'medium':
+      return { movingCars: 7, parked: 10, peds: 10, treeStride: 48, scans: false, propFar: 130 };
+    case 'high':
+      return { movingCars: 10, parked: 14, peds: 14, treeStride: 36, scans: true, propFar: 210 };
+    case 'ultra':
+      return { movingCars: 12, parked: 16, peds: 18, treeStride: 28, scans: true, propFar: 280 };
+    default: {
+      const _never: never = quality;
+      return _never;
+    }
+  }
+}
+
+export function lodFar(lod: LodBand): number {
+  switch (lod) {
+    case 'near': return 70;
+    case 'mid': return 130;
+    case 'far': return 260;
+    default: {
+      const _never: never = lod;
+      return _never;
+    }
+  }
+}
+
+export function emptyAdaptState(): AdaptState {
+  return { slowWindows: 0, fastWindows: 0, cooldown: 0 };
+}
+
+export function adaptQuality(current: Quality, avgDt: number, state: AdaptState): { preset: Quality; state: AdaptState; changed: 'up' | 'down' | null } {
+  const nextState: AdaptState = { ...state, cooldown: Math.max(0, state.cooldown - 1) };
+  if (nextState.cooldown > 0) return { preset: current, state: nextState, changed: null };
+  const index = QUALITY_ORDER.indexOf(current);
+  const slow = avgDt > 0.022;
+  const fast = avgDt < 0.0135;
+  if (slow) {
+    nextState.slowWindows += 1;
+    nextState.fastWindows = 0;
+    if (nextState.slowWindows >= 2 && index > 0) {
+      return { preset: QUALITY_ORDER[index - 1], state: { slowWindows: 0, fastWindows: 0, cooldown: 4 }, changed: 'down' };
+    }
+  } else if (fast) {
+    nextState.fastWindows += 1;
+    nextState.slowWindows = 0;
+    if (nextState.fastWindows >= 4 && index < QUALITY_ORDER.length - 1) {
+      return { preset: QUALITY_ORDER[index + 1], state: { slowWindows: 0, fastWindows: 0, cooldown: 6 }, changed: 'up' };
+    }
+  } else {
+    nextState.slowWindows = 0;
+    nextState.fastWindows = 0;
+  }
+  return { preset: current, state: nextState, changed: null };
+}
+
+export function parseGraphicsStore(raw: string | null): StoredGraphics | null {
+  if (!raw) return null;
+  try {
+    const data = JSON.parse(raw) as Partial<StoredGraphics>;
+    if (data.v !== 1 || typeof data.mode !== 'string' || !isQualityMode(data.mode)) return null;
+    const overrides = data.overrides && typeof data.overrides === 'object' ? sanitizeOverrides(data.overrides) : undefined;
+    return { v: 1, mode: data.mode, overrides };
+  } catch {
+    return null;
+  }
+}
+
+function sanitizeOverrides(raw: Partial<GraphicsToggles>): Partial<GraphicsToggles> | undefined {
+  const next: Partial<GraphicsToggles> = {};
+  if (typeof raw.pixelScale === 'number' && Number.isFinite(raw.pixelScale)) next.pixelScale = Math.min(2, Math.max(0.5, raw.pixelScale));
+  if (typeof raw.shadows === 'boolean') next.shadows = raw.shadows;
+  if (typeof raw.shadowSize === 'number' && [0, 512, 1024, 2048, 4096].includes(raw.shadowSize)) next.shadowSize = raw.shadowSize;
+  if (typeof raw.cascades === 'number' && raw.cascades >= 0 && raw.cascades <= 4) next.cascades = Math.floor(raw.cascades);
+  if (raw.reflections === 'off' || raw.reflections === 'ibl' || raw.reflections === 'probe' || raw.reflections === 'ssr') next.reflections = raw.reflections;
+  if (raw.lod === 'near' || raw.lod === 'mid' || raw.lod === 'far') next.lod = raw.lod;
+  if (typeof raw.aa === 'boolean') next.aa = raw.aa;
+  if (typeof raw.post === 'boolean') next.post = raw.post;
+  if (raw.textures === 'low' || raw.textures === 'high') next.textures = raw.textures;
+  return Object.keys(next).length ? next : undefined;
 }
 
 /** Cap speed for a blocker. Never raises the requested speed. */
