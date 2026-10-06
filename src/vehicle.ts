@@ -1,187 +1,128 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import { MEGALAMP, VEHICLE_PLATE } from './geo';
 
 export type LampMode = 'idle' | 'match';
 
-const OUTER_R = 0.34;
-const TRACK_X = 0.9;
-const AXLES = [-1.18, 1.12];
+const WHEEL_R = 0.33;
+const DOOR_OPEN = 1.65;
 
-/** Blunt coupe section. v=0 is the nose (−Z), v=1 is the kamm tail. */
-function shellPoint(v: number, theta: number) {
-  const z0 = -2.06 + v * 4.32;
-  const crown = Math.sin(Math.PI * Math.pow(v, 0.7));
-  const roofY = 0.82 + crown * 0.58 - Math.pow(v, 2.4) * 0.28;
-  const bellyY = 0.2 + Math.sin(Math.PI * v) * 0.045;
-  let halfW = 0.877 * (0.8 + 0.2 * Math.sin(Math.PI * Math.pow(v, 0.42)));
-  if (v > 0.86) halfW *= 1 - (v - 0.86) * 1.35;
-  halfW = Math.max(0.46, halfW);
-  const sx = Math.sin(theta);
-  const cy = Math.cos(theta);
-  const x = halfW * Math.sign(sx || 1) * Math.pow(Math.abs(sx), 0.72);
-  const yMid = (roofY + bellyY) * 0.5;
-  const yHalf = Math.max(0.05, (roofY - bellyY) * 0.5);
-  const y = yMid + yHalf * Math.sign(cy || 1) * Math.pow(Math.abs(cy), 0.8);
-  const edge = Math.min(1, Math.hypot(x / halfW, (y - yMid) / yHalf));
-  let z = z0;
-  z -= (Math.max(0, 0.18 - v) / 0.18) * (1 - edge) * 0.02;
-  z += (Math.max(0, v - 0.88) / 0.12) * (1 - edge) * 0.08;
-  return new THREE.Vector3(x, y, z);
+type Axis = 'x' | 'y' | 'z';
+
+function materialsOf(mesh: THREE.Mesh): THREE.Material[] {
+  return Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 }
 
-type ShellPart = 'gold' | 'roof' | 'wind' | 'doorL' | 'doorR';
-
-/** Parameter-aligned regions so the glass, roof, and door edges follow the surface. */
-function classifyShell(v: number, theta: number): ShellPart {
-  const side = Math.sin(theta);
-  const up = Math.cos(theta);
-  const lateral = Math.abs(side) > 0.58 && up < 0.45 && up > -0.08;
-  if (lateral && v > 0.36 && v < 0.58) return side > 0 ? 'doorR' : 'doorL';
-  if (v < 0.42 && up > 0.02 && Math.abs(side) < 0.78) return 'wind';
-  if (up > 0.22 && v > 0.2) return 'roof';
-  return 'gold';
+function asMesh(obj: THREE.Object3D | undefined, name: string): THREE.Mesh {
+  if (!(obj instanceof THREE.Mesh)) throw new Error(`Cybercab is missing mesh ${name}`);
+  return obj;
 }
 
-function shellGeometry(part: ShellPart, hinge: THREE.Vector3) {
-  const NU = 48;
-  const NV = 64;
-  const grid: THREE.Vector3[][] = [];
-  for (let iv = 0; iv <= NV; iv++) {
-    const row: THREE.Vector3[] = [];
-    const v = iv / NV;
-    for (let iu = 0; iu <= NU; iu++) row.push(shellPoint(v, (iu / NU) * Math.PI * 2));
-    grid.push(row);
-  }
-  const positions: number[] = [];
-  const indices: number[] = [];
-  const weld = new Map<string, number>();
-  const door = part === 'doorL' || part === 'doorR';
-  const vid = (v: THREE.Vector3) => {
-    const x = door ? v.x - hinge.x : v.x;
-    const y = door ? v.y - hinge.y : v.y;
-    const z = door ? v.z - hinge.z : v.z;
-    const key = `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`;
-    const found = weld.get(key);
-    if (found !== undefined) return found;
-    const id = positions.length / 3;
-    positions.push(x, y, z);
-    weld.set(key, id);
-    return id;
-  };
-  const pushTri = (a: THREE.Vector3, b: THREE.Vector3, c: THREE.Vector3) => {
-    indices.push(vid(a), vid(b), vid(c));
-  };
-  for (let iv = 0; iv < NV; iv++) {
-    for (let iu = 0; iu < NU; iu++) {
-      const a = grid[iv][iu];
-      const b = grid[iv][iu + 1];
-      const c = grid[iv + 1][iu + 1];
-      const d = grid[iv + 1][iu];
-      const center = new THREE.Vector3().add(a).add(b).add(c).add(d).multiplyScalar(0.25);
-      const v = (iv + 0.5) / NV;
-      const theta = ((iu + 0.5) / NU) * Math.PI * 2;
-      if (classifyShell(v, theta) !== part) continue;
-      const outward = center.clone().sub(new THREE.Vector3(0, 0.62, 0));
-      const normal = b.clone().sub(a).cross(d.clone().sub(a));
-      if (normal.dot(outward) >= 0) {
-        pushTri(a, b, d);
-        pushTri(b, c, d);
-      } else {
-        pushTri(a, d, b);
-        pushTri(b, d, c);
-      }
+function axisMostAligned(obj: THREE.Object3D, worldDir: THREE.Vector3): Axis {
+  obj.updateWorldMatrix(true, true);
+  const local = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 1, 0), new THREE.Vector3(0, 0, 1)];
+  const names: Axis[] = ['x', 'y', 'z'];
+  let best = 0;
+  let bestDot = -1;
+  for (let i = 0; i < local.length; i++) {
+    const dot = Math.abs(local[i].clone().transformDirection(obj.matrixWorld).dot(worldDir));
+    if (dot > bestDot) {
+      bestDot = dot;
+      best = i;
     }
   }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geo.setIndex(indices);
-  geo.computeVertexNormals();
-  geo.computeBoundingSphere();
-  return geo;
+  return names[best];
+}
+
+/** Which local axis swings the door upward. The glTF axis conversion is not assumed. */
+function doorHinge(spin: THREE.Object3D): { axis: Axis; sign: number } {
+  const probe = spin.children.find((child) => child.name.startsWith('door-') && !child.name.includes('frame') && !child.name.includes('glass')) ?? spin;
+  spin.updateWorldMatrix(true, true);
+  const before = new THREE.Box3().setFromObject(probe).getCenter(new THREE.Vector3()).y;
+  const axes: Axis[] = ['x', 'y', 'z'];
+  let best: { axis: Axis; sign: number; lift: number } = { axis: 'y', sign: 1, lift: -1 };
+  for (const axis of axes) {
+    for (const sign of [1, -1]) {
+      spin.rotation.set(0, 0, 0);
+      spin.rotation[axis] = sign * 0.4;
+      spin.updateWorldMatrix(true, true);
+      const lift = new THREE.Box3().setFromObject(probe).getCenter(new THREE.Vector3()).y - before;
+      if (lift > best.lift) best = { axis, sign, lift };
+    }
+  }
+  spin.rotation.set(0, 0, 0);
+  spin.updateWorldMatrix(true, true);
+  return { axis: best.axis, sign: best.sign };
 }
 
 /**
- * Two-seat coupe teardrop: champagne body, dark glass roof, clear windshield,
- * butterfly curb door, full-width front Megalamp and rear light bar.
- * Artistic proportions from the published 1,754 mm width and 1,408 mm height.
+ * Original subdivision-surface Cybercab. The mesh, materials, and hinge pivots
+ * come from tools/cybercab/build.py. Lamp color, the plate, and the door swing
+ * stay under the ride-flow API.
  */
-export function createCybercab() {
+export async function loadCybercab() {
   const group = new THREE.Group();
   group.name = 'Cybercab';
 
-  const gold = new THREE.MeshPhysicalMaterial({
-    color: 0xc4a06a, metalness: 0.42, roughness: 0.48, clearcoat: 0.18, clearcoatRoughness: 0.55,
-    envMapIntensity: 0.32, sheen: 0.08, sheenColor: new THREE.Color('#e7d3b0'),
-    emissive: new THREE.Color('#3a2c16'), emissiveIntensity: 0.04, side: THREE.DoubleSide,
+  const loader = new GLTFLoader();
+  loader.setMeshoptDecoder(MeshoptDecoder);
+  const gltf = await loader.loadAsync(`${import.meta.env.BASE_URL}models/cybercab.glb`);
+  const model = gltf.scene;
+  group.add(model);
+  group.updateMatrixWorld(true);
+
+  const named = new Map<string, THREE.Object3D>();
+  model.traverse((obj) => {
+    if (obj.name) named.set(obj.name, obj);
   });
-  const roofMat = new THREE.MeshStandardMaterial({
-    color: 0x141a1e, metalness: 0.06, roughness: 0.52, envMapIntensity: 0.16, side: THREE.DoubleSide,
+
+  model.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    const glass = /glass|windshield/i.test(obj.name);
+    obj.castShadow = !glass;
+    obj.receiveShadow = !glass;
+    for (const mat of materialsOf(obj)) {
+      if (mat instanceof THREE.MeshPhysicalMaterial && mat.metalness > 0.4 && mat.transmission === 0) {
+        mat.envMapIntensity = 0.65;
+      }
+    }
   });
-  const windMat = new THREE.MeshPhysicalMaterial({
-    color: 0xc5d2d6, metalness: 0.02, roughness: 0.08, transparent: true, opacity: 0.22,
-    envMapIntensity: 0.28, side: THREE.DoubleSide, depthWrite: false,
-  });
-  const doorGlass = new THREE.MeshPhysicalMaterial({
-    color: 0x1a2428, metalness: 0.12, roughness: 0.2, transparent: true, opacity: 0.78,
-    envMapIntensity: 0.3, side: THREE.DoubleSide, depthWrite: false,
-  });
-  const black = new THREE.MeshStandardMaterial({ color: 0x121416, roughness: 0.55, metalness: 0.25 });
-  const rubber = new THREE.MeshStandardMaterial({ color: 0x141516, roughness: 0.94 });
-  const discMat = new THREE.MeshStandardMaterial({ color: 0xc4a06a, metalness: 0.55, roughness: 0.38, envMapIntensity: 0.35 });
-  const upholstery = new THREE.MeshStandardMaterial({ color: 0xe7e1d4, roughness: 0.86 });
-  const white = new THREE.MeshStandardMaterial({ color: 0xf4fbff, emissive: 0xd7f0ff, emissiveIntensity: 1.6 });
-  const red = new THREE.MeshStandardMaterial({ color: 0xff2a22, emissive: 0xff1a12, emissiveIntensity: 1.4 });
-  const megalampMat = new THREE.MeshStandardMaterial({
-    color: MEGALAMP.color, emissive: MEGALAMP.color, emissiveIntensity: 0.35, roughness: 0.2, metalness: 0.05,
-  });
+
+  const megalamp = asMesh(named.get('megalamp'), 'megalamp');
+  const megalampMat = (materialsOf(megalamp)[0] as THREE.MeshStandardMaterial).clone();
+  megalamp.material = megalampMat;
+
   const glowMat = new THREE.MeshBasicMaterial({
     color: 0xf4f7ff, transparent: true, opacity: 0.2, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
   });
-  const amber = new THREE.MeshStandardMaterial({ color: 0xffb000, emissive: 0xff8a00, emissiveIntensity: 0.15 });
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(1.45, 0.14), glowMat);
+  glow.name = 'megalamp-glow';
+  glow.castShadow = false;
+  glow.rotation.y = Math.PI;
+  const lampPos = new THREE.Vector3();
+  megalamp.getWorldPosition(lampPos);
+  group.worldToLocal(lampPos);
+  glow.position.copy(lampPos);
+  glow.position.z -= 0.03;
+  group.add(glow);
 
-  const mesh = (g: THREE.BufferGeometry, m: THREE.Material, parent: THREE.Object3D = group) => {
-    const o = new THREE.Mesh(g, m);
-    o.castShadow = true;
-    o.receiveShadow = true;
-    parent.add(o);
-    return o;
-  };
+  const lampLight = new THREE.PointLight(0xf4f7ff, 0.25, 9, 2);
+  lampLight.position.copy(lampPos);
+  lampLight.position.z -= 0.45;
+  group.add(lampLight);
 
-  const hinge = shellPoint(0.45, 0);
-  hinge.x = 0;
-  hinge.y -= 0.03;
+  const hazardMeshes = ['hazard-fl', 'hazard-fr', 'hazard-rl', 'hazard-rr'].map((name) => asMesh(named.get(name), name));
+  const amber = (materialsOf(hazardMeshes[0])[0] as THREE.MeshStandardMaterial).clone();
+  for (const hazard of hazardMeshes) hazard.material = amber;
 
-  const body = mesh(shellGeometry('gold', hinge), gold);
-  body.name = 'body';
-  const roof = mesh(shellGeometry('roof', hinge), roofMat);
-  roof.castShadow = false;
-  roof.name = 'roof';
-  const windshield = mesh(shellGeometry('wind', hinge), windMat);
-  windshield.castShadow = false;
-  windshield.name = 'windshield';
+  const rearBar = asMesh(named.get('rear-lightbar'), 'rear-lightbar');
+  const red = (materialsOf(rearBar)[0] as THREE.MeshStandardMaterial).clone();
+  rearBar.material = red;
+  const rearLow = named.get('rear-bumper-lamp');
+  if (rearLow instanceof THREE.Mesh) rearLow.material = red;
 
-  const doors: { pivot: THREE.Group; side: number }[] = [];
-  for (const side of [-1, 1] as const) {
-    const pivot = new THREE.Group();
-    const sideHinge = hinge.clone();
-    sideHinge.x = side * 0.22;
-    pivot.position.copy(sideHinge);
-    group.add(pivot);
-    const panel = mesh(shellGeometry(side > 0 ? 'doorR' : 'doorL', sideHinge), doorGlass, pivot);
-    panel.castShadow = false;
-    panel.name = side > 0 ? 'doorR' : 'doorL';
-    const rail = mesh(new RoundedBoxGeometry(0.07, 0.07, 1.15, 2, 0.02), gold, pivot);
-    rail.position.set(side * 0.55, -0.42, 0.02);
-    doors.push({ pivot, side });
-  }
-
-  const floor = mesh(new THREE.BoxGeometry(1.2, 0.05, 1.55), black);
-  floor.position.set(0, 0.42, 0.12);
-  floor.castShadow = false;
-  const dash = mesh(new RoundedBoxGeometry(1.22, 0.08, 0.22, 2, 0.02), black);
-  dash.position.set(0, 0.58, -0.78);
-  dash.castShadow = false;
   const screenCanvas = document.createElement('canvas');
   screenCanvas.width = 1024;
   screenCanvas.height = 480;
@@ -201,39 +142,9 @@ export function createCybercab() {
   sctx.fillText('Buckle up, then Start Ride', 56, 280);
   const screenTex = new THREE.CanvasTexture(screenCanvas);
   screenTex.colorSpace = THREE.SRGBColorSpace;
-  const screen = mesh(new THREE.PlaneGeometry(1.16, 0.52), new THREE.MeshBasicMaterial({ map: screenTex }));
-  screen.position.set(0, 0.64, -0.95);
+  const screen = asMesh(named.get('front-screen'), 'front-screen');
+  screen.material = new THREE.MeshBasicMaterial({ map: screenTex });
   screen.castShadow = false;
-  screen.name = 'front-screen';
-
-  for (const x of [-0.34, 0.34]) {
-    const cushion = mesh(new RoundedBoxGeometry(0.5, 0.1, 0.48, 2, 0.04), upholstery);
-    cushion.position.set(x, 0.52, 0.28);
-    const back = mesh(new RoundedBoxGeometry(0.48, 0.42, 0.08, 2, 0.04), upholstery);
-    back.position.set(x, 0.74, 0.5);
-    back.rotation.x = -0.22;
-  }
-
-  const megalamp = mesh(new RoundedBoxGeometry(1.38, 0.08, 0.05, 2, 0.02), megalampMat);
-  megalamp.position.set(0, 0.64, -2.1);
-  megalamp.name = 'megalamp';
-  const megalampGlow = mesh(new THREE.PlaneGeometry(1.5, 0.2), glowMat);
-  megalampGlow.position.set(0, 0.64, -2.14);
-  megalampGlow.castShadow = false;
-  megalampGlow.renderOrder = 2;
-  const frontWhiteL = mesh(new THREE.BoxGeometry(0.22, 0.05, 0.04), white);
-  frontWhiteL.position.set(-0.52, 0.52, -2.1);
-  const frontWhiteR = mesh(new THREE.BoxGeometry(0.22, 0.05, 0.04), white);
-  frontWhiteR.position.set(0.52, 0.52, -2.1);
-  const rearLamp = mesh(new RoundedBoxGeometry(1.16, 0.07, 0.05, 2, 0.015), red);
-  rearLamp.position.set(0, 0.58, 2.32);
-  rearLamp.name = 'rear-lightbar';
-  const hazards: THREE.Mesh[] = [];
-  for (const [x, z] of [[-0.62, -2.1], [0.62, -2.1], [-0.52, 2.3], [0.52, 2.3]] as [number, number][]) {
-    const h = mesh(new THREE.BoxGeometry(0.12, 0.045, 0.03), amber);
-    h.position.set(x, z < 0 ? 0.36 : 0.5, z);
-    hazards.push(h);
-  }
 
   const plateCanvas = document.createElement('canvas');
   plateCanvas.width = 256;
@@ -252,27 +163,33 @@ export function createCybercab() {
   pctx.fillText(VEHICLE_PLATE, 128, 92);
   const plateTex = new THREE.CanvasTexture(plateCanvas);
   plateTex.colorSpace = THREE.SRGBColorSpace;
-  const plate = mesh(new THREE.PlaneGeometry(0.36, 0.16), new THREE.MeshStandardMaterial({ map: plateTex, roughness: 0.55 }));
-  plate.position.set(0, 0.4, 2.34);
+  const plate = asMesh(named.get('plate'), 'plate');
+  const plateMat = (materialsOf(plate)[0] as THREE.MeshStandardMaterial).clone();
+  plateMat.map = plateTex;
+  plateMat.color.setHex(0xffffff);
+  plateMat.roughness = 0.55;
+  plate.material = plateMat;
 
-  const lampLight = new THREE.PointLight(MEGALAMP.color, 0, 9, 2);
-  lampLight.position.set(0, 0.85, -3.1);
-  group.add(lampLight);
+  const lod0 = named.get('lod0') ?? null;
+  const lod1 = named.get('body-lod1') ?? null;
+  if (lod1) lod1.visible = false;
 
-  const wheels: THREE.Group[] = [];
-  for (const x of [-TRACK_X, TRACK_X]) {
-    for (const z of AXLES) {
-      const w = new THREE.Group();
-      w.position.set(x, OUTER_R, z);
-      group.add(w);
-      wheels.push(w);
-      const tire = mesh(new THREE.TorusGeometry(0.23, 0.11, 14, 28), rubber, w);
-      tire.rotation.y = Math.PI / 2;
-      const disc = mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.05, 24), discMat, w);
-      disc.rotation.z = Math.PI / 2;
-      disc.position.x = Math.sign(x) * 0.07;
-    }
-  }
+  const doorSpins = (['r', 'l'] as const).map((suffix) => {
+    const spin = named.get(`door-hinge-${suffix}`);
+    if (!spin) throw new Error(`Cybercab is missing door-hinge-${suffix}`);
+    return { spin, side: suffix === 'r' ? 1 : -1, ...doorHinge(spin) };
+  });
+
+  const spins = (['fl', 'fr', 'rl', 'rr'] as const).map((which) => {
+    const spin = named.get(`wheel-spin-${which}`);
+    if (!spin) throw new Error(`Cybercab is missing wheel-spin-${which}`);
+    return { spin, axis: axisMostAligned(spin, new THREE.Vector3(1, 0, 0)) };
+  });
+  const steers = (['fl', 'fr'] as const).map((which) => {
+    const steer = named.get(`wheel-steer-${which}`);
+    if (!steer) throw new Error(`Cybercab is missing wheel-steer-${which}`);
+    return { steer, axis: axisMostAligned(steer, new THREE.Vector3(0, 1, 0)) };
+  });
 
   const contact = new THREE.Mesh(
     new THREE.CircleGeometry(1.15, 24),
@@ -288,7 +205,8 @@ export function createCybercab() {
   let hazardsOn = false;
   let lampTime = 0;
   let openAmount = 0;
-  let openSide = 1;
+  let prevYaw = group.rotation.y;
+  let steerAngle = 0;
 
   function applyLamp(dt: number) {
     lampTime += dt;
@@ -330,19 +248,25 @@ export function createCybercab() {
     cameraClearance: 5.6,
     setDoor(open: number, side = 1) {
       openAmount = THREE.MathUtils.clamp(open, 0, 1);
-      openSide = side;
-      for (const door of doors) {
-        const amount = door.side === openSide ? openAmount : 0;
-        door.pivot.rotation.order = 'YXZ';
-        door.pivot.rotation.y = -door.side * amount * 0.45;
-        door.pivot.rotation.z = door.side * amount * 1.15;
+      for (const door of doorSpins) {
+        const swing = door.side === side ? openAmount : 0;
+        door.spin.rotation[door.axis] = door.sign * swing * DOOR_OPEN;
       }
     },
     setLamp(mode: LampMode) { lampMode = mode; },
     setHazards(on: boolean) { hazardsOn = on; },
-    update(dt: number, speed: number) {
+    update(dt: number, speed: number, viewDistance = 8) {
       applyLamp(dt);
-      for (const w of wheels) w.rotation.x -= speed * dt / OUTER_R;
+      for (const wheel of spins) wheel.spin.rotation[wheel.axis] -= speed * dt / WHEEL_R;
+      const yaw = group.rotation.y;
+      const dyaw = Math.atan2(Math.sin(yaw - prevYaw), Math.cos(yaw - prevYaw));
+      prevYaw = yaw;
+      const target = THREE.MathUtils.clamp(-dyaw / Math.max(dt, 1e-3) * 0.12, -0.4, 0.4);
+      steerAngle = THREE.MathUtils.damp(steerAngle, speed > 0.4 ? target : 0, 6, dt);
+      for (const steer of steers) steer.steer.rotation[steer.axis] = steerAngle;
+      const far = viewDistance > 22 && openAmount < 0.05;
+      if (lod0) lod0.visible = !far;
+      if (lod1) lod1.visible = far;
     },
   };
 }

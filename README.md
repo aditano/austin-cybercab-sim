@@ -42,7 +42,7 @@ The request, pickup, ride timing, estimated time, fare-like UI, cabin functions,
 
 ## Scope and accuracy
 
-The scene uses Three.js geometry, materials, lighting, fog, and post-processing to create a cinematic, procedural impression of downtown. It is not photogrammetry, a surveyed digital twin, or an Unreal Engine scene. Building shapes and heights are incomplete approximations, while facade detail, trees, street furniture, traffic, lane offsets, and travel time are not survey data. The vehicle and cabin are procedural artistic reconstructions, not manufacturer CAD or an exact copy of production software.
+The scene uses Three.js geometry, materials, lighting, fog, and post-processing to create a cinematic, procedural impression of downtown. It is not photogrammetry, a surveyed digital twin, or an Unreal Engine scene. Building shapes and heights are incomplete approximations, while facade detail, trees, street furniture, traffic, lane offsets, and travel time are not survey data. The Cybercab is an original subdivision-surface model (`tools/cybercab/build.py`) loaded as glTF. It is not manufacturer CAD, and the cabin UI is original artwork rather than a copy of production software.
 
 The bundled OpenStreetMap extract covers a compact downtown area around Congress Avenue, from the South Congress riverfront through northern downtown, and includes nearby streets, building footprints, and Lady Bird Lake shoreline. The simulated trip runs from Congress & 2nd to Congress & 7th and stays north of the lake; it does not cross the lake or model an Austin-wide route. OSM data is an input to the scene, not a live map feed or a Tesla service-area boundary. See [docs/RESEARCH.md](docs/RESEARCH.md) for source, extraction, and height-estimation details.
 

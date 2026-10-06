@@ -28,7 +28,7 @@ No official downloadable Tesla polygon was found. Third-party reporting on **31 
 
 The [Cybercab overview](https://www.tesla.com/robotaxi/riderguides/cybercab/en_us/GUID-669E83C2-E7DE-40F4-9DBD-C9A32E7F6DFF.html) documents two seats, no pedals or steering wheel, door open/close on the touchscreen, seat controls, support, climate, volume, a top status bar, and an app launcher during trips. An overhead stop button requests an emergency pull-over. This project recreates relevant functions with original artwork — **not a pixel-perfect copy of production software**.
 
-Published dimensions: about 1,754 mm width and 1,408 mm height. The procedural vehicle is an artistic approximation, not manufacturer CAD.
+Published dimensions: about 1,754 mm width and 1,408 mm height. The vehicle is an original artistic model at those dimensions, not manufacturer CAD.
 
 ## Visual target
 
@@ -36,7 +36,7 @@ A publicly posted high-fidelity teleoperation / city-drive clip (chase camera, r
 
 The default graphics mode is balanced (shadows, bloom, no SSAO) so the ride keeps real-time on a mid laptop. The top-right control cycles balanced, cinematic (SSAO and a larger shadow map), and performance. Simulation steps catch up to about a quarter-second per frame so a slow paint does not freeze the cab a block away.
 
-The vehicle is a two-seat coupe teardrop: champagne paint that stays gold in direct sun (curved normals, low clearcoat, almost no emissive), a dark glass roof, a clear windshield, butterfly doors hinged at the roof crown, aero wheel covers, a full-width front Megalamp, and a full-width red rear light bar. It is sized from the published width and height and sits with its tires on the road mesh. During the approach and at the curb the camera sits ahead and to the curb side so the nose and Megalamp read as the front of the car. Once the ride starts it follows from behind and above, looking up Congress. The cabin eye sits in the right seat and looks through the windshield, with the front screen low in the view.
+The vehicle is a two-seat fastback coupe: champagne paint with a clearcoat, a body-colored hardtop, a dark tinted windshield, one side window per door, butterfly doors hinged along the roof, aero wheel covers, a full-width front Megalamp, and a full-width red rear light bar. It is sized from the published width and height and sits with its tires on the road mesh. During the approach and at the curb the camera sits ahead and to the curb side so the nose and Megalamp read as the front of the car. Once the ride starts it follows from behind and above, looking up Congress. The cabin eye sits in the right seat and looks through the windshield, with the front screen low in the view.
 
 Downtown reads as Austin rather than a generic glass grid. OSM footprints still supply Frost Bank Tower, The Independent, and The Austonian; the sim adds a recognizable crown, cantilevered floors, and a spire on those footprints. The Texas State Capitol dome is just north of the bundled extract, so an artistic rose-granite capitol is placed on the published coordinate, on axis with Congress. The mesh is enlarged past the real ~95 m height so the dome stays readable through golden-hour haze at the end of the avenue. Congress live oaks are flat-crowned and set back from the curb so they leave that sightline open. Lady Bird Lake stays the OSM shoreline. The opening view looks slightly up, north up Congress.
 
