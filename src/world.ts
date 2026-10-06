@@ -8,13 +8,29 @@ type MapData = { roads:Feature[]; buildings:Feature[]; water:Feature[] };
 const point = (p:number[]) => new THREE.Vector2((p[0]+97.745)*96100,-(p[1]-30.264)*111320);
 const seeded = (n:number) => { let x=Math.sin(n*127.1+311.7)*43758.5453123; return x-Math.floor(x); };
 
-export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
+let mapDataPromise: Promise<MapData> | null = null;
+
+export function loadMapData(): Promise<MapData> {
+  if (!mapDataPromise) {
+    mapDataPromise = fetch(`${import.meta.env.BASE_URL}data/austin.json`).then((response) => {
+      if (!response.ok) throw new Error('Map unavailable');
+      return response.json() as Promise<MapData>;
+    });
+  }
+  return mapDataPromise;
+}
+
+export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void): {update(dt:number):void; ready: Promise<void>; city: THREE.Group} {
   const root=new THREE.Group(); root.name='Austin · geographic city'; scene.add(root);
   const city=new THREE.Group(); root.add(city);
+  const loading = new THREE.LoadingManager();
+  const textureReady = new Promise<void>((resolve) => { loading.onLoad = () => resolve(); });
+  const texLoader = new THREE.TextureLoader(loading);
+  const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
   function mapTexture(file:string, srgb:boolean) {
-    const texture=new THREE.TextureLoader().load(`${import.meta.env.BASE_URL}textures/${file}`);
+    const texture=texLoader.load(`${import.meta.env.BASE_URL}textures/${file}`);
     texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
-    texture.anisotropy=8;
+    texture.anisotropy=coarse ? 2 : 8;
     texture.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;
     return texture;
   }
@@ -409,7 +425,24 @@ export function createWorld(scene:THREE.Scene): {update(dt:number):void} {
     }
     dressLandmarks(city,data);
   }
-  fetch(`${import.meta.env.BASE_URL}data/austin.json`).then(r=>{if(!r.ok)throw new Error('Map unavailable');return r.json();}).then((data:MapData)=>{if(data.roads?.length&&data.buildings?.length)render(data);else createFallback();}).catch(()=>createFallback());
+  const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const ready = (async () => {
+    onStatus?.('Loading the map');
+    let data: MapData | null = null;
+    try { data = await loadMapData(); } catch { data = null; }
+    onStatus?.('Building downtown');
+    await new Promise<void>((resolve) => { setTimeout(resolve, 32); });
+    if (data?.roads?.length && data.buildings?.length) render(data);
+    else createFallback();
+    await Promise.race([textureReady, new Promise<void>((resolve) => { setTimeout(resolve, 12000); })]);
+  })();
   let time=0;
-  return {update(dt:number){time+=dt;waterMaterial.roughness=.19+Math.sin(time*.3)*.025;}};
+  return {
+    city,
+    ready,
+    update(dt:number) {
+      time += dt;
+      if (!reduceMotion) waterMaterial.roughness = 0.19 + Math.sin(time * 0.3) * 0.025;
+    },
+  };
 }
