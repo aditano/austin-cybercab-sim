@@ -142,6 +142,12 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
       mesh.position.copy(position).addScaledVector(across, east ? OFFSET.park : OFFSET.oppPark);
       mesh.position.y = ROAD_Y;
       mesh.rotation.y = heading + (east ? 0 : Math.PI);
+      // The opening camera looks down this block. A Kenney body here reads as the hero car.
+      const nearHero = (mesh.position.x - 80) ** 2 + (mesh.position.z + 20) ** 2 < 58 * 58;
+      if (nearHero) {
+        root.remove(mesh);
+        continue;
+      }
       root.add(mesh);
       parked.push(mesh);
     }
