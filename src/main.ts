@@ -71,13 +71,13 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.18;
+renderer.toneMappingExposure = 0.94;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.localClippingEnabled = true;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#d5dee6');
-scene.fog = new THREE.FogExp2('#d5dee6', 0.00072);
+scene.fog = new THREE.FogExp2('#c5ced6', 0.00045);
 const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.15, 3200);
 
 const sky = new Sky();
@@ -98,8 +98,8 @@ const skyEnv = pmrem.fromScene(sky as unknown as THREE.Scene, 0.03).texture;
 scene.environment = skyEnv;
 scene.environmentIntensity = 0.95;
 
-scene.add(new THREE.HemisphereLight('#e7eef4', '#8d887c', 0.55));
-const sun = new THREE.DirectionalLight('#f4f6f8', 2.15);
+scene.add(new THREE.HemisphereLight('#d7e0e8', '#5c5954', 0.22));
+const sun = new THREE.DirectionalLight('#f4f2ec', 1.7);
 sun.position.copy(sunOffset);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
@@ -151,7 +151,7 @@ scene.add(padGlow);
 const life = createCityLife(scene, route, cumulative, routeLength);
 
 async function restyleWorld() {
-  const parked = world.dress(assets, quality);
+  const parked = world.dress(assets, quality, { x: walk.x, z: walk.z });
   life.populate(assets, quality);
   lighting.hookObject(scene);
   const picks = [...life.objects(), ...parked];
@@ -192,12 +192,9 @@ const gradePass = new ShaderPass({
     void main(){
       vec3 c=texture2D(tDiffuse,vUv).rgb;
       float l=dot(c,vec3(0.2126,0.7152,0.0722));
-      c=mix(vec3(l),c,1.02);
-      float sky=smoothstep(0.38,0.78,vUv.y);
-      c.r=mix(c.r,c.r*0.94,sky);
-      c.g=mix(c.g,c.g*0.96,sky);
-      c.b=mix(c.b,min(c.b+0.045,1.0),sky);
-      c=pow(max(c,0.0),vec3(0.96));
+      c=mix(vec3(l),c,1.14);
+      float toe=smoothstep(0.0,0.42,l);
+      c*=mix(0.55,1.08,toe);
       gl_FragColor=vec4(c,1.0);
     }`,
 });
@@ -1231,7 +1228,7 @@ void Promise.all([
   new HDRLoader().loadAsync(`${import.meta.env.BASE_URL}textures/kloofendal_overcast_puresky_1k.hdr`).then((hdri) => {
     hdri.mapping = THREE.EquirectangularReflectionMapping;
     scene.background = hdri;
-    scene.backgroundIntensity = 1.28;
+    scene.backgroundIntensity = 1.42;
     const env = pmrem.fromEquirectangular(hdri).texture;
     const previous = scene.environment;
     scene.environment = env;

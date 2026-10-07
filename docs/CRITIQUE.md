@@ -149,3 +149,18 @@ The lavender column was the Medium Kenney curved lamp. `light-curved.glb` stores
 Pixel check on the same walk still: round 3 had a lavender run 241 pixels tall around x=892. This still's longest lavender run is 63 pixels of blue-grey glass around x=1084. There is no sidewalk column.
 
 What still looks fake, in order: the crowns are clumps of spheres; the cars are still a built mesh, not a photographed car; the near buildings are extruded footprints; the road wear is dark boxes rather than photographed asphalt; the people are two game skeletons. This is not GTA 6, and it does not match the Congress Avenue photograph.
+
+## Round 5, free assets only
+
+Judged on 7 Oct 2026 against the same Congress Avenue photograph and the round 4 walk still. Medium, forced, 1440×900, SwiftShader. Experience and ride-flow passed. Chase gap 6.62. Teal stayed 0.
+
+Round 4 regressed. The wear pass was unlit black boxes, and the crowns were bright icosahedra. This pass removes both.
+
+| Ask | What the new still shows | Status |
+| --- | --- | --- |
+| Road wear | The black boxes are gone. The road crop has no pixels under luma 30. An ambientCG Asphalt Damage 001 decal was built and still read as a dark rectangle, so it is not in the scene. The asphalt texture and the worn lane paint stay. | fixed — the rectangles are gone. The street is cleaner than the photograph. |
+| Trees | Poly Haven island, fir, and pine glTF bins are 22–949 MB and were not shipped. Crowns are alpha-tested cards using the Tree Small 02 leaf atlas. Lit canopy pixels average about rgb(60, 77, 51). The photograph's greens average about rgb(49, 63, 47). They are leaf cards, not a scanned oak. | partial |
+| Camera clip | The opening walk eye is about (89, 1.8, −55), not the south hub. Trees within 11 m of that eye are not placed. The upper-right quadrant is about 1.6% canopy. | fixed |
+| Color | ACES filmic stays (AgX is in three r180 and is the flatter curve). Exposure is 0.94, the fill light is lower, and a grade toe darkens shadows. Walk luma p5/p50/p95 is about 63/161/222. The photograph is 22/129/228. Saturation is about 0.15 on both. Shadows are still lighter than the photograph. | partial |
+
+What still looks fake, in order: the crowns are crossed leaf cards; the cars are a built mesh; the near buildings are extruded footprints; the road has no photographed cracks; the people are two game skeletons. This is not GTA 6, and it does not match the Congress Avenue photograph.

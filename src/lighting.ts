@@ -133,7 +133,7 @@ export function createLighting(
     apply(graphics, quality, software) {
       const useCsm = graphics.shadows && graphics.cascades > 0 && !software;
       sun.castShadow = graphics.shadows && !useCsm;
-      sun.intensity = useCsm ? 0 : 3.05;
+      sun.intensity = useCsm ? 0 : 1.7;
       if (graphics.shadows && graphics.shadowSize > 0) sun.shadow.mapSize.set(graphics.shadowSize, graphics.shadowSize);
       sun.shadow.radius = quality === 'ultra' ? 2.5 : quality === 'high' ? 2 : 1.5;
       sun.shadow.bias = -0.0004;
@@ -153,7 +153,7 @@ export function createLighting(
             maxFar: quality === 'ultra' ? 220 : quality === 'high' ? 160 : 110,
             mode: 'practical',
             shadowMapSize: graphics.shadowSize,
-            lightIntensity: 3.05,
+            lightIntensity: 1.7,
             lightDirection: sunOffset.clone().normalize().negate(),
             shadowBias: -0.00025,
           });
