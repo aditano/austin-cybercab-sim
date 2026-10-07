@@ -10,7 +10,7 @@ Credit (optional): Kenney.nl
 
 Bundled after meshopt compression: `sedan`, `sedan-sports`, `hatchback-sports`, `suv`, `suv-luxury`, `van`, `truck`, `taxi`, `police`.
 
-These are the highest-quality **permissively licensed, no-login** modern vehicle meshes that stay small enough to instance as downtown traffic. Photogrammetry cars were skipped because they are too heavy for Low/Auto on phones.
+These Kenney files stay in the repo. Visible traffic uses the original glTF bodies in `traffic-sedan.glb`, `traffic-suv.glb`, and `traffic-hatch.glb` (`tools/traffic_cars.py`). They are proportioned like a sedan, an SUV, and a hatch, with glass, tires, headlights, and taillights. No third-party car scan was small enough to ship.
 
 ## People — Mixamo rigs via three.js examples
 
@@ -65,14 +65,19 @@ Poly Haven CC0: Kloofendal 48d Partly Cloudy Pure Sky (1K, golden hour), Evening
 [https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky)  
 [https://polyhaven.com/a/roof_tiles_14](https://polyhaven.com/a/roof_tiles_14)
 
-ambientCG CC0 facade photographs, color only, recompressed to 1K JPEG. Each building picks one. Roofs use the Poly Haven tile. Dark texels in the photo get a cheap interior shift so the windows are not flat stickers.
+ambientCG CC0, 2K JPEG, color plus normal and roughness. Masonry walls sample these with mipmaps and anisotropic filtering. Windows are cut in the shader so a photo of a whole facade is not tiled. The older Facade001/005/007/014 color JPEGs remain on disk and are not applied.
 
 | File | Asset | URL |
 | --- | --- | --- |
-| `textures/facades/facade-a.jpg` | Facade001 | https://ambientcg.com/view?id=Facade001 |
-| `textures/facades/facade-b.jpg` | Facade005 | https://ambientcg.com/view?id=Facade005 |
-| `textures/facades/facade-c.jpg` | Facade007 | https://ambientcg.com/view?id=Facade007 |
-| `textures/facades/facade-d.jpg` | Facade014 | https://ambientcg.com/view?id=Facade014 |
+| `textures/facades/stone-color.jpg`, `stone-normal.jpg`, `stone-rough.jpg` | Bricks100 | https://ambientcg.com/view?id=Bricks100 |
+| `textures/facades/brick-color.jpg`, `brick-normal.jpg`, `brick-rough.jpg` | Bricks051 | https://ambientcg.com/view?id=Bricks051 |
+| `textures/facades/plaster-color.jpg`, `plaster-normal.jpg`, `plaster-rough.jpg` | Plaster007 | https://ambientcg.com/view?id=Plaster007 |
+| `textures/facades/facade-a.jpg` | Facade001 (unused) | https://ambientcg.com/view?id=Facade001 |
+| `textures/facades/facade-b.jpg` | Facade005 (unused) | https://ambientcg.com/view?id=Facade005 |
+| `textures/facades/facade-c.jpg` | Facade007 (unused) | https://ambientcg.com/view?id=Facade007 |
+| `textures/facades/facade-d.jpg` | Facade014 (unused) | https://ambientcg.com/view?id=Facade014 |
+
+Street trees in the hero blocks are instanced live-oak canopies (bark and leaf textures already listed). The Poly Haven apartment facade, fire escape, and shrub scans are not placed on the sidewalk. A freestanding facade module was reading as a blue column.
 
 Kenney stop and warning signs are still in `public/models` but are not instanced. Their glTF positions are integer-quantized and became a giant octagon at street scale.
 

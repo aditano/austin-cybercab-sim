@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CAPITOL, ROAD_Y } from './geo';
-import type { HeroKind, StreetAssets, PropKind } from './assets';
+import type { StreetAssets, PropKind } from './assets';
 import { kindFromIndex } from './assets';
 import { streetBudget, type Quality } from './logic';
 
@@ -111,21 +111,37 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
   });
   leafMat.userData.castShadow=false;
   const waterMaterial=new THREE.MeshPhysicalMaterial({color:0x2a656c,metalness:0.55,roughness:0.08,transparent:true,opacity:0.92,envMapIntensity:1.7,clearcoat:1,clearcoatRoughness:.12});
-  function facadeMap(file:string) {
+  function pbrMap(file:string, srgb:boolean) {
     const texture=texLoader.load(`${import.meta.env.BASE_URL}textures/facades/${file}`);
     texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
-    texture.anisotropy=coarse?4:8;
-    texture.colorSpace=THREE.SRGBColorSpace;
+    texture.anisotropy=coarse?4:16;
+    texture.generateMipmaps=true;
+    texture.minFilter=THREE.LinearMipmapLinearFilter;
+    texture.magFilter=THREE.LinearFilter;
+    texture.colorSpace=srgb?THREE.SRGBColorSpace:THREE.NoColorSpace;
     return texture;
   }
-  const facadeMaps=['facade-a.jpg','facade-b.jpg','facade-c.jpg','facade-d.jpg'].map(facadeMap);
-  const roofMap=facadeMap('roof.jpg');
-  // Wall-aligned UVs. Triplanar blending smeared the window photos across roofs and corners.
+  const stoneColor=pbrMap('stone-color.jpg',true), stoneNor=pbrMap('stone-normal.jpg',false), stoneRough=pbrMap('stone-rough.jpg',false);
+  const brickColor=pbrMap('brick-color.jpg',true), brickNor=pbrMap('brick-normal.jpg',false), brickRough=pbrMap('brick-rough.jpg',false);
+  const plasterColor=pbrMap('plaster-color.jpg',true), plasterNor=pbrMap('plaster-normal.jpg',false), plasterRough=pbrMap('plaster-rough.jpg',false);
+  const roofMap=pbrMap('roof.jpg',true);
+  type WallMaps = { color: THREE.Texture; normal: THREE.Texture; rough: THREE.Texture; scaleU: number; scaleV: number; bay: number; floorH: number; curtain: boolean };
+  const wallSets: WallMaps[] = [
+    { color: stoneColor, normal: stoneNor, rough: stoneRough, scaleU: 0.36, scaleV: 0.72, bay: 2.7, floorH: 3.35, curtain: false },
+    { color: brickColor, normal: brickNor, rough: brickRough, scaleU: 1.05, scaleV: 1.05, bay: 2.25, floorH: 3.15, curtain: false },
+    { color: plasterColor, normal: plasterNor, rough: plasterRough, scaleU: 0.48, scaleV: 0.48, bay: 3.05, floorH: 3.5, curtain: false },
+    { color: stoneColor, normal: stoneNor, rough: stoneRough, scaleU: 0.34, scaleV: 0.68, bay: 1.85, floorH: 3.6, curtain: true },
+    { color: plasterColor, normal: plasterNor, rough: plasterRough, scaleU: 0.32, scaleV: 0.32, bay: 2.05, floorH: 3.8, curtain: true },
+  ];
+  // Punched windows on a PBR wall. Dark texels are not recolored, so the facade cannot turn into a blue/beige checker.
   function makeFacade(index:number) {
+    const set=wallSets[index%wallSets.length];
     const material=new THREE.MeshStandardMaterial({
-      map:facadeMaps[index],color:0xffffff,roughness:0.76,metalness:0.04,envMapIntensity:0.95,
+      map:set.color, normalMap:set.normal, roughnessMap:set.rough,
+      color:set.curtain?0xd5ddd8:0xffffff, roughness:set.curtain?0.55:0.86, metalness:set.curtain?0.18:0.02, envMapIntensity:0.9,
     });
-    const scale=(0.078+index*0.011).toFixed(4);
+    material.normalScale=new THREE.Vector2(set.curtain?0.35:0.85, set.curtain?0.35:0.85);
+    const key=`wall-${index}-${set.scaleU}-${set.bay}-${set.curtain?1:0}`;
     material.onBeforeCompile=shader=>{
       shader.uniforms.roofMap={value:roofMap};
       shader.vertexShader='varying vec3 vSurfacePosition;\n'+shader.vertexShader;
@@ -136,28 +152,56 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
         #endif
         vSurfacePosition=(modelMatrix*surfacePosition).xyz;`);
       shader.fragmentShader='uniform sampler2D roofMap;\nvarying vec3 vSurfacePosition;\n'+shader.fragmentShader;
-      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>',`#ifdef USE_MAP
-        vec3 faceN=normalize(cross(dFdx(vSurfacePosition),dFdy(vSurfacePosition)));
-        float roof=smoothstep(0.42,0.74,abs(faceN.y));
-        vec2 wallUv=(abs(faceN.x)>abs(faceN.z)?vSurfacePosition.zy:vSurfacePosition.xy)*${scale};
-        vec4 wallTex=texture2D(map,wallUv);
-        vec4 roofTex=texture2D(roofMap,vSurfacePosition.xz*${scale});
-        vec3 albedo=mix(wallTex.rgb,roofTex.rgb,roof);
-        float luma=dot(wallTex.rgb,vec3(0.299,0.587,0.114));
-        float windowMask=(1.0-roof)*smoothstep(0.46,0.14,luma);
+      const sample=`
+        vec3 geomN=normalize(cross(dFdx(vSurfacePosition),dFdy(vSurfacePosition)));
+        float roof=smoothstep(0.5,0.82,abs(geomN.y));
+        float xWall=step(abs(geomN.z),abs(geomN.x));
+        float along=mix(vSurfacePosition.x,vSurfacePosition.z,xWall);
+        float up=vSurfacePosition.y;
+        vec2 wallUv=vec2(along*${set.scaleU.toFixed(4)}, up*${set.scaleV.toFixed(4)});
+        vec3 brick=texture2D(map,wallUv).rgb;
+        brick=clamp((brick-0.42)*1.45+0.42,0.0,1.0);
+        float brickRough=texture2D(roughnessMap,wallUv).g;
+        vec3 nTex=texture2D(normalMap,wallUv).xyz*2.0-1.0;
+        vec3 upRef=abs(geomN.y)>0.85?vec3(1.0,0.0,0.0):vec3(0.0,1.0,0.0);
+        vec3 tangent=normalize(cross(upRef,geomN));
+        vec3 bitangent=cross(geomN,tangent);
+        vec3 mappedN=normalize(tangent*nTex.x+bitangent*nTex.y+geomN*nTex.z);
+        float bay=${set.bay.toFixed(3)};
+        float floorH=${set.floorH.toFixed(3)};
+        float row=floor(up/floorH);
+        float jitter=fract(sin((row+${index}.0)*17.13)*43.758)*0.55;
+        float fx=fract((along+${(index*1.37).toFixed(3)}+jitter)/bay);
+        float fy=fract(up/floorH);
+        float pier=smoothstep(0.0,${set.curtain?'0.32':'0.12'},fx)*smoothstep(0.0,${set.curtain?'0.32':'0.12'},1.0-fx);
+        float sill=smoothstep(${set.curtain?'0.04':'0.18'},${set.curtain?'0.46':'0.30'},fy)*smoothstep(${set.curtain?'0.08':'0.16'},${set.curtain?'0.40':'0.28'},1.0-fy);
+        float punched=pier*sill;
+        float shopFx=fract(along/3.35);
+        float shopPier=smoothstep(0.04,0.1,shopFx)*smoothstep(0.04,0.1,1.0-shopFx);
+        float shop=shopPier*smoothstep(0.25,0.55,up)*(1.0-smoothstep(3.15,3.55,up));
+        float glassMix=${set.curtain?'mix(shop,pier*sill,step(4.0,up))':'mix(shop,punched,step(3.7,up))'};
+        glassMix*=(1.0-roof);
         vec3 viewDir=normalize(cameraPosition-vSurfacePosition);
-        vec2 interiorUv=wallUv+viewDir.xz*windowMask*0.08;
-        float room=fract(sin(dot(floor(interiorUv*6.5),vec2(12.9898,78.233)))*43758.5453);
-        vec3 interior=mix(vec3(0.12,0.16,0.2),vec3(1.0,0.58,0.26),step(0.42,room));
-        interior*=0.28+0.85*room;
-        albedo=mix(albedo,interior,windowMask*0.78);
-        diffuseColor*=vec4(albedo,wallTex.a);
-        #endif`);
+        float fres=pow(1.0-clamp(abs(dot(normalize(mappedN),viewDir)),0.0,1.0),2.2);
+        vec3 glassCol=mix(vec3(0.035,0.045,0.05),vec3(0.62,0.68,0.7),fres*0.62);
+        float pane=floor(along/bay)+floor(up/floorH)*13.0;
+        float warm=step(0.82,fract(sin(pane*12.9898)*43758.5453));
+        glassCol=mix(glassCol,vec3(0.62,0.36,0.16),warm*0.28*step(4.2,up));
+        vec3 roofCol=texture2D(roofMap,vSurfacePosition.xz*0.09).rgb;
+        vec3 albedo=mix(mix(brick,glassCol,glassMix),roofCol,roof);
+        diffuseColor=vec4(albedo,1.0);
+        roughnessFactor=mix(roughness*brickRough,0.045,glassMix);
+        roughnessFactor=mix(roughnessFactor,0.78,roof);
+        normal=normalize(mix(normal,mappedN,0.8*(1.0-glassMix)*(1.0-roof)));
+      `;
+      shader.fragmentShader=shader.fragmentShader.replace('#include <map_fragment>','');
+      shader.fragmentShader=shader.fragmentShader.replace('#include <roughnessmap_fragment>','float roughnessFactor=roughness;');
+      shader.fragmentShader=shader.fragmentShader.replace('#include <normal_fragment_maps>', sample);
     };
-    material.customProgramCacheKey=()=>`facade-photo-${index}-${scale}`;
+    material.customProgramCacheKey=()=>key;
     return material;
   }
-  const facadeMaterials=[0,1,2,3].map(makeFacade);
+  const facadeMaterials=wallSets.map((_,index)=>makeFacade(index));
   const manholeCanvas=document.createElement('canvas');manholeCanvas.width=manholeCanvas.height=128;
   const manholeCtx=manholeCanvas.getContext('2d')!;
   manholeCtx.fillStyle='#2e3336';manholeCtx.beginPath();manholeCtx.arc(64,64,60,0,Math.PI*2);manholeCtx.fill();
@@ -227,15 +271,27 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
         const end=a.clone().addScaledVector(direction,Math.min(d+11.6,len));
         for(const side of [-1,1])strip(parent,center.clone().addScaledVector(normal,side*(width/2+.16)),end.clone().addScaledVector(normal,side*(width/2+.16)),.28,.18,curb,.16);
         if(major)for(const side of [-1,1])strip(parent,center.clone().addScaledVector(normal,side*.17),end.clone().addScaledVector(normal,side*.17),.10,.165,gold,.012);
+        if(/Congress Avenue/.test(f.name||''))for(const side of [-1,1])strip(parent,center.clone().addScaledVector(normal,side*(width/2-1.7)),end.clone().addScaledVector(normal,side*(width/2-1.7)),.12,.17,stripe,.02);
         if(Math.floor((travelled+d)/12)%2===0)for(const offset of major?[-width*.25,width*.25]:[0])strip(parent,center.clone().addScaledVector(normal,offset),end.clone().addScaledVector(normal,offset),.12,.165,stripe,.012);
       }
       if(major)for(let d=12;d<len-8;d+=28) {
+        const congress=/Congress Avenue/.test(f.name||'');
+        const sides=congress?[-1,1]:[1];
         const v=a.clone().addScaledVector(direction,d).addScaledVector(normal,width*.5+4.4);
         if(nearJunction(v,22))continue;
         const yaw=Math.atan2(-direction.y,direction.x);
         const seed=d+i*12;
-        box(parent,v.x,.09,v.y,2.1,.16,2.1,lawn);
-        streetSpots.push({kind:'tree',x:v.x,z:v.y,yaw,seed});
+        for(const side of sides) {
+          const spot=a.clone().addScaledVector(direction,d).addScaledVector(normal,side*(width*.5+3.8));
+          if(nearJunction(spot,16)) continue;
+          box(parent,spot.x,.09,spot.y,2.1,.16,2.1,lawn);
+          streetSpots.push({kind:'tree',x:spot.x,z:spot.y,yaw,seed:seed+side*17});
+          const hero=(spot.x-80)**2+(spot.y+20)**2<175*175;
+          if(congress && hero && Math.floor(d/14)%2===0) {
+            const mid=a.clone().addScaledVector(direction,d+7).addScaledVector(normal,side*(width*.5+3.8));
+            streetSpots.push({kind:'tree',x:mid.x,z:mid.y,yaw,seed:seed+40+side});
+          }
+        }
         const p=a.clone().addScaledVector(direction,d+12).addScaledVector(normal,width*.5+1.1);
         streetSpots.push({kind:'lamp',x:p.x,z:p.y,yaw:Math.atan2(-normal.y,normal.x),seed:seed+3});
         const seat=v.clone().addScaledVector(direction,4);
@@ -249,11 +305,28 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       travelled+=len;
     }
   }
+  const awnings: { x:number; z:number; yaw:number; width:number }[] = [];
+  const shopSigns: { x:number; z:number; yaw:number; text:string }[] = [];
+  const shopNames = ['COFFEE','BOOKS','MARKET','HOTEL','GALLERY','DINER','FLORIST','NEWS'];
   function building(parent:THREE.Object3D,f:Feature,index:number) {
     const h=Math.min(250,Math.max(4,Number(f.height)||Number(f.levels)*3.5||8+seeded(index)*12));
-    const material=facadeMaterials[index%facadeMaterials.length];
+    const tall=h>26;
+    const palette=tall?[3,4]:[0,1,2];
+    const material=facadeMaterials[palette[index%palette.length]];
     const result=polygon(parent,f.coordinates,h,material,0);if(!result)return;
     const pts=result.pts;
+    const center=pts.reduce((v,p)=>v.add(p),new THREE.Vector2()).multiplyScalar(1/pts.length);
+    const nearHub=(center.x-80)**2+(center.y+20)**2<150*150 || (center.x-165)**2+(center.y+300)**2<120*120;
+    if(nearHub) {
+      for(let e=1;e<pts.length;e++) {
+        const a=pts[e-1],b=pts[e],length=a.distanceTo(b);
+        if(length<8||length>42||awnings.length>=28) continue;
+        const yaw=Math.atan2(-(b.y-a.y),b.x-a.x);
+        const nx=-Math.sin(yaw), nz=-Math.cos(yaw);
+        awnings.push({ x:(a.x+b.x)/2+nx*1.05, z:(a.y+b.y)/2+nz*1.05, yaw, width:Math.min(length-0.4,16) });
+        if(shopSigns.length<8 && length>10) shopSigns.push({ x:(a.x+b.x)/2+nx*1.2, z:(a.y+b.y)/2+nz*1.2, yaw, text:shopNames[shopSigns.length%shopNames.length] });
+      }
+    }
     if(h>16) {
       for(let e=1;e<pts.length;e++) {
         const a=pts[e-1],b=pts[e],length=a.distanceTo(b);if(length<1||length>350)continue;
@@ -289,8 +362,8 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       box(parent,corner.x,2.8,corner.y,.11,5.6,.11,metal);
       const sign=new THREE.Mesh(new THREE.PlaneGeometry(2.8,.7),congressSign);sign.position.set(corner.x,5.45,corner.y);sign.rotation.y=Math.atan2(-along.y,along.x);parent.add(sign);
       const second=new THREE.Mesh(new THREE.PlaneGeometry(2.2,.6),secondSign);second.position.set(corner.x,4.72,corner.y);second.rotation.y=Math.atan2(-across.y,across.x);parent.add(second);
-      const signal=corner.clone().addScaledVector(across,-side*2.7);
-      box(parent,(corner.x+signal.x)/2,5.9,(corner.y+signal.y)/2,2.8,.13,.13,metal,Math.atan2(-across.y,across.x));
+      const signal=corner.clone().addScaledVector(across,-side*6.4);
+      box(parent,(corner.x+signal.x)/2,5.9,(corner.y+signal.y)/2,6.6,.12,.12,metal,Math.atan2(-across.y,across.x));
       box(parent,signal.x,5.25,signal.y,.4,1.1,.35,metal);
       const lenses=[{y:5.52,color:0x8a3030,emissive:0x3a1010,on:0},{y:5.25,color:0xdca65a,emissive:0xcb8729,on:.15},{y:4.98,color:0x2f8a48,emissive:0x1f6a32,on:.45}];
       for(const lens of lenses) {
@@ -393,9 +466,26 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     }
     render({roads,buildings,water:[{name:'Lady Bird Lake',coordinates:[coords(-2000,-260),coords(-1100,-80),coords(0,175),coords(2000,390),coords(2000,610),coords(0,390),coords(-1100,100),coords(-2000,-60)]}]});
   }
+  function projectTheatre(lon:number, lat:number) { return point([lon, lat]); }
+  function marquee(parent:THREE.Object3D, x:number, z:number, title:string, yaw:number) {
+    const canvas=document.createElement('canvas'); canvas.width=1024; canvas.height=256;
+    const ctx=canvas.getContext('2d')!;
+    ctx.fillStyle='#140c08'; ctx.fillRect(0,0,1024,256);
+    ctx.strokeStyle='#f2d48a'; ctx.lineWidth=18; ctx.strokeRect(18,18,988,220);
+    ctx.fillStyle='#ffe7a3';
+    for(let i=48;i<1000;i+=34){ ctx.beginPath(); ctx.arc(i,36,8,0,Math.PI*2); ctx.fill(); ctx.beginPath(); ctx.arc(i,220,8,0,Math.PI*2); ctx.fill(); }
+    ctx.fillStyle='#f6e7b0'; ctx.font='700 118px Georgia, serif'; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(title,512,128);
+    const tex=new THREE.CanvasTexture(canvas); tex.colorSpace=THREE.SRGBColorSpace; tex.anisotropy=8;
+    const board=new THREE.Mesh(new THREE.BoxGeometry(8.6,2.15,0.38), new THREE.MeshStandardMaterial({map:tex,emissive:0x4a3214,emissiveMap:tex,emissiveIntensity:0.45,roughness:0.42,metalness:0.04}));
+    board.position.set(x,8.4,z); board.rotation.y=yaw; board.castShadow=true; parent.add(board);
+    const stem=new THREE.Mesh(new THREE.BoxGeometry(0.18,3.6,0.18), metal);
+    stem.position.set(x,5.4,z); stem.castShadow=true; parent.add(stem);
+  }
   function render(data:MapData) {
     city.clear();
     streetSpots.length=0;
+    awnings.length=0;
+    shopSigns.length=0;
     dressed.clear();
     const nodes=new Map<string,{point:THREE.Vector2,names:Set<string>}>();
     for(const r of data.roads||[]) {
@@ -467,6 +557,31 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       if(merged){meshes.forEach(mesh=>city.remove(mesh));const mesh=new THREE.Mesh(merged,material);mesh.castShadow=material.userData.castShadow!==false;mesh.receiveShadow=true;city.add(mesh);}
     }
     dressLandmarks(city,data);
+    if(awnings.length) {
+      const awningMat=new THREE.MeshStandardMaterial({color:0xffffff,roughness:0.74,metalness:0.02});
+      const awningMesh=new THREE.InstancedMesh(boxGeometry,awningMat,awnings.length);
+      const awningDummy=new THREE.Object3D();
+      const awningTints=[0x1f4d3a,0x6e2430,0x1c3a5a,0xc4a574,0x243026];
+      awnings.forEach((awning,i)=>{
+        awningDummy.position.set(awning.x,2.85,awning.z);
+        awningDummy.rotation.set(0,awning.yaw,0);
+        awningDummy.scale.set(awning.width,0.07,1.2);
+        awningDummy.updateMatrix();
+        awningMesh.setMatrixAt(i,awningDummy.matrix);
+        awningMesh.setColorAt(i,new THREE.Color(awningTints[i%awningTints.length]));
+      });
+      awningMesh.castShadow=true;awningMesh.receiveShadow=true;awningMesh.frustumCulled=false;city.add(awningMesh);
+    }
+    for(const sign of shopSigns) {
+      const board=new THREE.Mesh(new THREE.PlaneGeometry(Math.min(3.2,2.2),0.55),signTexture(sign.text,'#1b1a17'));
+      board.position.set(sign.x,3.55,sign.z);
+      board.rotation.y=sign.yaw;
+      city.add(board);
+    }
+    const paramount=projectTheatre(-97.7418633,30.2693791);
+    const stateTheatre=projectTheatre(-97.7418048,30.2695354);
+    marquee(city,paramount.x,paramount.y,'PARAMOUNT',Math.PI/2);
+    marquee(city,stateTheatre.x,stateTheatre.y,'STATE',Math.PI/2);
     let holes=0;
     for(const spot of streetSpots) {
       if(spot.kind!=='lamp'||holes>=10) continue;
@@ -479,8 +594,76 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     }
     city.add(dressed);
   }
+  function makeScooter() {
+    const deck=new THREE.BoxGeometry(0.16,0.045,0.9); deck.translate(0,0.18,0);
+    const stem=new THREE.BoxGeometry(0.04,0.82,0.04); stem.translate(0,0.58,0.36);
+    const bar=new THREE.BoxGeometry(0.42,0.03,0.04); bar.translate(0,0.98,0.36);
+    const wheel=new THREE.CylinderGeometry(0.11,0.11,0.04,10); wheel.rotateZ(Math.PI/2);
+    const front=wheel.clone(); front.translate(0,0.12,0.4);
+    const rear=wheel.clone(); rear.translate(0,0.12,-0.38);
+    return mergeGeometries([deck,stem,bar,front,rear]) ?? deck;
+  }
+  function canopyTexture() {
+    const canvas=document.createElement('canvas'); canvas.width=canvas.height=256;
+    const ctx=canvas.getContext('2d')!;
+    ctx.clearRect(0,0,256,256);
+    for(let i=0;i<160;i++) {
+      const x=128+(seeded(i*3)-0.5)*210;
+      const y=128+(seeded(i*5)-0.5)*190;
+      ctx.fillStyle=`rgba(${40+(seeded(i*9)*30)|0},${86+(seeded(i*11)*48)|0},${32+(seeded(i*13)*16)|0},0.9)`;
+      ctx.beginPath();
+      ctx.ellipse(x,y,16+seeded(i*17)*30,8+seeded(i*19)*14,seeded(i*23)*3,0,Math.PI*2);
+      ctx.fill();
+    }
+    const texture=new THREE.CanvasTexture(canvas);
+    texture.colorSpace=THREE.SRGBColorSpace;
+    texture.anisotropy=8;
+    texture.needsUpdate=true;
+    return texture;
+  }
+  const canopyMap=canopyTexture();
+  const scooterGeometry=makeScooter();
+  const scooterMat=new THREE.MeshStandardMaterial({color:0x2a3134,metalness:0.4,roughness:0.42});
   const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const dummy = new THREE.Object3D();
+  function placeOaks(parent:THREE.Object3D, spots:StreetSpot[], quality:Quality) {
+    if(!spots.length) return;
+    const cards=quality==='low'?5:quality==='medium'?10:quality==='high'?12:14;
+    const trunkGeo=new THREE.CylinderGeometry(0.22,0.42,1,6); trunkGeo.translate(0,0.5,0);
+    const oakLeaf=new THREE.MeshStandardMaterial({map:canopyMap,alphaTest:0.2,side:THREE.DoubleSide,roughness:0.86,color:0xffffff});
+    const trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,spots.length);
+    const leaves=new THREE.InstancedMesh(leafCard,oakLeaf,spots.length*cards);
+    const shade=new THREE.InstancedMesh(new THREE.CircleGeometry(1,12), new THREE.MeshBasicMaterial({color:0x1c2618,transparent:true,opacity:0.32,depthWrite:false}), spots.length);
+    trunks.castShadow=quality!=='low'; trunks.receiveShadow=true; trunks.frustumCulled=false;
+    leaves.castShadow=quality==='high'||quality==='ultra'; leaves.receiveShadow=false; leaves.frustumCulled=false;
+    shade.frustumCulled=false; shade.renderOrder=2;
+    let leafIndex=0;
+    spots.forEach((spot,i)=>{
+      const trunkH=2.15+seeded(spot.seed)*0.7;
+      const crown=5.2+seeded(spot.seed+3)*1.6;
+      dummy.position.set(spot.x,0,spot.z); dummy.rotation.set(0,spot.yaw,0); dummy.scale.set(1,trunkH,1); dummy.updateMatrix();
+      trunks.setMatrixAt(i,dummy.matrix);
+      for(let c=0;c<cards;c++) {
+        const ang=seeded(spot.seed+c*19)*Math.PI*2;
+        const rad=(0.28+seeded(spot.seed+c*7)*0.9)*crown*0.52;
+        dummy.position.set(spot.x+Math.cos(ang)*rad, trunkH+0.55+seeded(spot.seed+c*5)*2.3, spot.z+Math.sin(ang)*rad*0.82);
+        dummy.rotation.set((seeded(spot.seed+c)-0.5)*0.7, ang, (seeded(spot.seed+c*3)-0.5)*0.45);
+        dummy.scale.set(crown*(0.7+seeded(spot.seed+c)*0.22), crown*0.4, 1);
+        dummy.updateMatrix();
+        leaves.setMatrixAt(leafIndex++, dummy.matrix);
+      }
+      dummy.position.set(spot.x,0.175,spot.z);
+      dummy.rotation.set(-Math.PI/2,0,spot.yaw);
+      dummy.scale.set(crown*0.9, crown*0.7, 1);
+      dummy.updateMatrix();
+      shade.setMatrixAt(i, dummy.matrix);
+    });
+    trunks.instanceMatrix.needsUpdate=true;
+    leaves.instanceMatrix.needsUpdate=true;
+    shade.instanceMatrix.needsUpdate=true;
+    parent.add(trunks, leaves);
+    if(quality==='low'||quality==='medium') parent.add(shade);
+  }
   function dress(assets: StreetAssets, quality: Quality): THREE.Object3D[] {
     dressed.clear();
     const budget = streetBudget(quality);
@@ -491,13 +674,13 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     const keep = (spot: StreetSpot, far: number) => spotDist(spot, south) < far * far || spotDist(spot, downtown) < far * far;
     const stride = Math.max(1, Math.round(budget.treeStride / 28));
     const trees = streetSpots.filter((s) => s.kind === 'tree').filter((_, i) => i % stride === 0);
-    const leafCap = quality === 'ultra' ? 48 : quality === 'high' ? 36 : quality === 'medium' ? 24 : 0;
-    const leafRadius = quality === 'medium' ? 160 : 220;
+    const oakCap = quality === 'ultra' ? 56 : quality === 'high' ? 40 : quality === 'medium' ? 28 : 12;
+    const oakRadius = quality === 'low' ? 90 : quality === 'medium' ? 175 : 230;
     const nearest = (spot: StreetSpot) => Math.min(spotDist(spot, south), spotDist(spot, downtown));
-    const leafTrees = trees.filter((spot) => keep(spot, leafRadius)).sort((a, b) => nearest(a) - nearest(b)).slice(0, leafCap);
-    const leafSet = new Set(leafTrees);
-    const coneTrees = trees.filter((spot) => !leafSet.has(spot));
-    leafTrees.forEach((spot) => tree(dressed, spot.x, spot.z, spot.seed));
+    const oakTrees = trees.filter((spot) => keep(spot, oakRadius)).sort((a, b) => nearest(a) - nearest(b)).slice(0, oakCap);
+    const oakSet = new Set(oakTrees);
+    const coneTrees = trees.filter((spot) => !oakSet.has(spot));
+    placeOaks(dressed, oakTrees, quality);
     const treeScale = assets.propScale('tree', quality);
     const treeMesh = assets.instanceProp('tree', quality, coneTrees.length);
     if (treeMesh && treeScale) {
@@ -512,30 +695,6 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       dressed.add(treeMesh);
     } else if (!treeMesh) {
       coneTrees.forEach((spot) => tree(dressed, spot.x, spot.z, spot.seed));
-    }
-    function placeScan(kind: HeroKind, spot: StreetSpot, along: number, scale: number) {
-      const model = assets.spawnHero(kind, scale);
-      if (!model) return;
-      const yaw = spot.yaw + Math.PI;
-      const nx = Math.sin(yaw);
-      const nz = Math.cos(yaw);
-      model.position.set(spot.x + nx * along, 0, spot.z + nz * along);
-      model.rotation.y = yaw;
-      if (kind === 'facade') {
-        model.traverse((obj) => {
-          if (obj instanceof THREE.Mesh) obj.castShadow = false;
-        });
-      }
-      dressed.add(model);
-    }
-    if (quality !== 'low') {
-      const anchors = streetSpots.filter((s) => s.kind === 'tree' && keep(s, 240)).sort((a, b) => spotDist(a, south) - spotDist(b, south));
-      const facadeCount = quality === 'ultra' ? 2 : 1;
-      const escapeCount = quality === 'medium' ? 2 : 4;
-      const shrubCount = quality === 'medium' ? 6 : 10;
-      anchors.filter((_, i) => i % 5 === 0).slice(0, facadeCount).forEach((spot) => placeScan('facade', spot, 1.4, 1));
-      anchors.filter((_, i) => i % 5 === 2).slice(0, escapeCount).forEach((spot) => placeScan('escape', spot, -1.8, 1));
-      anchors.filter((_, i) => i % 3 === 1).slice(0, shrubCount).forEach((spot) => placeScan('shrub', spot, 0.2, 2.6));
     }
     const instanceKinds: PropKind[] = ['lamp', 'planter', 'pole', 'cone', 'dumpster', 'signal'];
     for (const kind of instanceKinds) {
@@ -565,8 +724,16 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
         dressed.add(model);
       });
     }
-    const heroCar = (x: number, z: number) => (x - 80) ** 2 + (z + 20) ** 2 < 58 * 58;
-    const parks = streetSpots.filter((s) => s.kind === 'park' && !heroCar(s.x, s.z)).slice(0, budget.parked);
+    const inLens = (x: number, z: number) => (x - 80) ** 2 + (z + 20) ** 2 < 3.2 * 3.2;
+    const parks = streetSpots.filter((s) => s.kind === 'park' && !inLens(s.x, s.z)).slice(0, budget.parked);
+    const scooterSpots = streetSpots.filter((s) => s.kind === 'tree' && spotDist(s, south) < 110 * 110).filter((_, i) => i % 5 === 1).slice(0, quality === 'low' ? 3 : 8);
+    scooterSpots.forEach((spot) => {
+      const scooter = new THREE.Mesh(scooterGeometry, scooterMat);
+      scooter.position.set(spot.x + Math.sin(spot.yaw) * 1.15, ROAD_Y, spot.z + Math.cos(spot.yaw) * 1.15);
+      scooter.rotation.y = spot.yaw + 0.4;
+      scooter.castShadow = quality !== 'low';
+      dressed.add(scooter);
+    });
     const cars: THREE.Object3D[] = [];
     parks.forEach((spot, i) => {
       const mesh = assets.spawnCar(kindFromIndex(i), paints[i % paints.length]);

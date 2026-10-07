@@ -162,8 +162,8 @@ export function createLighting(
             light.color.set('#ffc07a');
             // A large normal bias lifts the shadow off the tires (peter-panning).
             // Keep it small and let a modest map bias hide acne on the hood.
-            light.shadow.normalBias = quality === 'ultra' ? 0.012 : 0.018;
-            light.shadow.bias = -0.00025;
+            light.shadow.normalBias = quality === 'ultra' ? 0.008 : 0.012;
+            light.shadow.bias = -0.00022;
             light.shadow.radius = quality === 'ultra' ? 2 : 1.5;
           }
         }

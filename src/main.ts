@@ -71,23 +71,23 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.02;
+renderer.toneMappingExposure = 1.05;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.localClippingEnabled = true;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#e8c4a0');
-scene.fog = new THREE.FogExp2('#e4c2a4', 0.0034);
+scene.background = new THREE.Color('#efe0c8');
+scene.fog = new THREE.FogExp2('#e4d2b8', 0.00135);
 const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.15, 3200);
 
 const sky = new Sky();
 sky.scale.setScalar(45000);
 const su = sky.material.uniforms;
-su.turbidity.value = 6.2;
-su.rayleigh.value = 2.4;
-su.mieCoefficient.value = 0.012;
-su.mieDirectionalG.value = 0.86;
-const sunPosition = new THREE.Vector3(-0.72, 0.09, 0.62);
+su.turbidity.value = 4.6;
+su.rayleigh.value = 2.1;
+su.mieCoefficient.value = 0.008;
+su.mieDirectionalG.value = 0.82;
+const sunPosition = new THREE.Vector3(-0.62, 0.22, 0.48);
 const sunOffset = sunPosition.clone().normalize().multiplyScalar(280);
 su.sunPosition.value.copy(sunPosition);
 scene.add(sky);
@@ -97,8 +97,8 @@ const skyEnv = pmrem.fromScene(sky as unknown as THREE.Scene, 0.03).texture;
 scene.environment = skyEnv;
 scene.environmentIntensity = 0.95;
 
-scene.add(new THREE.HemisphereLight('#ffd7b0', '#5c4638', 0.28));
-const sun = new THREE.DirectionalLight('#ffc07a', 3.35);
+scene.add(new THREE.HemisphereLight('#ffe4c4', '#6a5848', 0.42));
+const sun = new THREE.DirectionalLight('#ffd2a2', 2.55);
 sun.position.copy(sunOffset);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
@@ -150,7 +150,6 @@ scene.add(padGlow);
 const life = createCityLife(scene, route, cumulative, routeLength);
 
 async function restyleWorld() {
-  if (quality !== 'low') await assets.ensureHeroes();
   const parked = world.dress(assets, quality);
   life.populate(assets, quality);
   lighting.hookObject(scene);
@@ -193,9 +192,9 @@ const gradePass = new ShaderPass({
       vec3 c=texture2D(tDiffuse,vUv).rgb;
       float l=dot(c,vec3(0.2126,0.7152,0.0722));
       c=mix(vec3(l),c,1.12);
-      c.r+=0.035*(c.r-0.35);
-      c.b+=0.03*(0.45-l);
-      c=pow(max(c,0.0),vec3(0.94));
+      c.r+=0.012*(c.r-0.4);
+      c.b+=0.012*(0.5-l);
+      c=pow(max(c,0.0),vec3(0.98));
       gl_FragColor=vec4(c,1.0);
     }`,
 });
@@ -793,14 +792,15 @@ function applyQuality(next: Quality, announce = true, fromUser = false) {
   lighting.hookObject(scene);
   if (ssaoPass) {
     ssaoPass.enabled = graphics.post && quality !== 'low' && !coarsePointer && !lockSoftware;
-    ssaoPass.kernelRadius = quality === 'ultra' ? 18 : 14;
+    ssaoPass.enabled = graphics.post && quality !== 'low' && !coarsePointer && !lockSoftware;
+    ssaoPass.kernelRadius = quality === 'ultra' ? 18 : quality === 'high' ? 12 : 6;
     ssaoPass.minDistance = 0.002;
-    ssaoPass.maxDistance = quality === 'ultra' ? 0.28 : 0.18;
+    ssaoPass.maxDistance = quality === 'ultra' ? 0.28 : quality === 'high' ? 0.16 : 0.08;
   }
-  bloomPass.enabled = graphics.post && !lockSoftware;
-  bloomPass.threshold = 0.72;
-  bloomPass.strength = !graphics.post ? 0 : quality === 'ultra' ? 0.22 : quality === 'high' ? 0.16 : 0.1;
-  bloomPass.radius = quality === 'ultra' ? 0.42 : 0.32;
+  bloomPass.enabled = graphics.post && !lockSoftware && !coarsePointer;
+  bloomPass.threshold = quality === 'ultra' ? 0.74 : 0.82;
+  bloomPass.strength = !graphics.post || coarsePointer ? 0 : quality === 'ultra' ? 0.16 : quality === 'high' ? 0.1 : 0.045;
+  bloomPass.radius = quality === 'ultra' ? 0.38 : 0.28;
   smaaPass.enabled = graphics.aa && !coarsePointer && !lockSoftware;
   gradePass.enabled = graphics.post && !lockSoftware;
   scene.environmentIntensity = quality === 'ultra' ? 1.25 : quality === 'low' ? 0.9 : 1.15;
