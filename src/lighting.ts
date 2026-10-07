@@ -159,7 +159,7 @@ export function createLighting(
           });
           csm.fade = true;
           for (const light of csm.lights) {
-            light.color.set('#ffc07a');
+            light.color.set('#f4f2ec');
             // A large normal bias lifts the shadow off the tires (peter-panning).
             // Keep it small and let a modest map bias hide acne on the hood.
             light.shadow.normalBias = quality === 'ultra' ? 0.008 : 0.012;

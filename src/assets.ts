@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { Quality } from './logic';
 
 export type StreetKind = 'sedan' | 'sedan-sports' | 'suv' | 'suv-luxury' | 'van' | 'pickup' | 'taxi' | 'police' | 'hatch';
@@ -58,9 +59,12 @@ const HERO_FILES: Record<HeroKind, string> = {
   shrub: 'props/shrub.glb',
 };
 
+// Soldier and X Bot stay on disk for the license record. They are not spawned:
+// one is a soldier, the other a robot. Walk clips are retargeted onto clothed rigs.
+const CLIP_SOURCE = 'people/soldier.glb';
 const PEOPLE = [
-  { id: 'soldier', file: 'people/soldier.glb', walk: 'Walk', idle: 'Idle' },
-  { id: 'xbot', file: 'people/xbot.glb', walk: 'walk', idle: 'idle' },
+  { id: 'michelle', file: 'people/michelle.glb', strip: '' },
+  { id: 'civilian', file: 'people/civilian.glb', strip: 'mixamorig:' },
 ] as const;
 
 const TARGET_CAR_LENGTH: Record<StreetKind, number> = {
@@ -148,7 +152,7 @@ export type StreetAssets = {
   spawnProp(kind: PropKind, quality: Quality): THREE.Object3D | null;
   spawnHero(kind: HeroKind, scale?: number): THREE.Object3D | null;
   ensureHeroes(): Promise<void>;
-  instanceProp(kind: PropKind, quality: Quality, count: number): THREE.InstancedMesh | null;
+  instanceProp(kind: PropKind, quality: Quality, count: number): THREE.InstancedMesh[];
   propScale(kind: PropKind, quality: Quality): { scale: number; lift: number } | null;
   spawnPerson(seed: number, quality: Quality): SpawnedPerson | null;
   materials(): THREE.Material[];
@@ -162,7 +166,7 @@ export function createStreetAssets(): StreetAssets {
   const props = new Map<PropId, Template>();
   const heroes = new Map<HeroKind, Template>();
   let heroPromise: Promise<void> | null = null;
-  const people: { id: string; template: Template; walk: string; idle: string }[] = [];
+  const people: { id: string; template: Template; clips: THREE.AnimationClip[] }[] = [];
   const collected: THREE.Material[] = [];
 
   async function loadOne(file: string): Promise<Template> {
@@ -182,11 +186,31 @@ export function createStreetAssets(): StreetAssets {
     const propLoads = (Object.keys(PROP_FILES) as PropId[]).map(async (id) => {
       props.set(id, await loadOne(PROP_FILES[id]));
     });
+    const clipSource = await loadOne(CLIP_SOURCE);
     const peopleLoads = PEOPLE.map(async (spec) => {
-      people.push({ id: spec.id, template: await loadOne(spec.file), walk: spec.walk, idle: spec.idle });
+      const template = await loadOne(spec.file);
+      const clips = clipSource.animations
+        .filter((clip) => clip.name === 'Walk' || clip.name === 'Idle')
+        .map((clip) => retargetClip(clip, spec.strip));
+      people.push({ id: spec.id, template, clips });
     });
     await Promise.all([...carLoads, ...propLoads, ...peopleLoads]);
+    people.sort((a, b) => a.id.localeCompare(b.id));
   })();
+
+  function retargetClip(clip: THREE.AnimationClip, strip: string) {
+    if (!strip) return clip;
+    const tracks = clip.tracks.map((track) => {
+      const dot = track.name.lastIndexOf('.');
+      const copy = track.clone();
+      const node = track.name.slice(0, dot);
+      const prop = track.name.slice(dot + 1);
+      const renamed = node.startsWith(strip) ? node.slice(strip.length) : node;
+      copy.name = `${renamed}.${prop}`;
+      return copy;
+    });
+    return new THREE.AnimationClip(clip.name, clip.duration, tracks);
+  }
 
   function cloneTemplate(template: Template, shadows: boolean) {
     const clone = SkeletonUtils.clone(template.scene) as THREE.Group;
@@ -231,9 +255,9 @@ export function createStreetAssets(): StreetAssets {
             color: paint,
             metalness: 0.62,
             roughness: 0.28,
-            clearcoat: 0.72,
-            clearcoatRoughness: 0.22,
-            envMapIntensity: 1.55,
+            clearcoat: 0.9,
+            clearcoatRoughness: 0.14,
+            envMapIntensity: 1.85,
           });
           obj.material = mat;
           collected.push(mat);
@@ -282,15 +306,34 @@ export function createStreetAssets(): StreetAssets {
     },
     instanceProp(kind, quality, count) {
       const resolved = templateFor(kind, quality);
-      if (!resolved || resolved.template.meshCount !== 1 || count < 1) return null;
-      const mesh = firstMesh(resolved.template.scene);
-      if (!mesh) return null;
-      const inst = new THREE.InstancedMesh(mesh.geometry, mesh.material, count);
-      inst.castShadow = quality !== 'low';
-      inst.receiveShadow = quality !== 'low';
-      inst.frustumCulled = true;
-      collected.push(mesh.material as THREE.Material);
-      return inst;
+      if (!resolved || count < 1) return [];
+      const root = resolved.template.scene;
+      root.updateMatrixWorld(true);
+      // Kenney city-kit glTFs store POSITION as int16 and a node scale near 0.05–0.38.
+      // Instancing the raw accessor made the east-sidewalk lamp a ~24 m lavender column.
+      const groups = new Map<THREE.Material, THREE.BufferGeometry[]>();
+      root.traverse((obj) => {
+        if (!(obj instanceof THREE.Mesh)) return;
+        const geo = obj.geometry.clone();
+        geo.applyMatrix4(obj.matrixWorld);
+        const mat = Array.isArray(obj.material) ? obj.material[0] : obj.material;
+        const list = groups.get(mat) ?? [];
+        list.push(geo);
+        groups.set(mat, list);
+      });
+      const meshes: THREE.InstancedMesh[] = [];
+      for (const [mat, geos] of groups) {
+        const geometry = geos.length === 1 ? geos[0] : mergeGeometries(geos);
+        if (!geometry) continue;
+        if (geos.length > 1) geos.forEach((geo) => geo.dispose());
+        const inst = new THREE.InstancedMesh(geometry, mat, count);
+        inst.castShadow = quality !== 'low';
+        inst.receiveShadow = quality !== 'low';
+        inst.frustumCulled = false;
+        collected.push(mat);
+        meshes.push(inst);
+      }
+      return meshes;
     },
     propScale(kind, quality) {
       const resolved = templateFor(kind, quality);
@@ -311,9 +354,9 @@ export function createStreetAssets(): StreetAssets {
         if (!(obj instanceof THREE.Mesh)) return;
         const src = Array.isArray(obj.material) ? obj.material[0] : obj.material;
         if (!(src instanceof THREE.MeshStandardMaterial) && !(src instanceof THREE.MeshPhysicalMaterial)) return;
-        if (/visor|eye|joint/i.test(src.name) || /visor|eye/i.test(obj.name)) return;
+        if (/visor|eye|joint|skin|hair|teeth|cornea/i.test(src.name) || /visor|eye|hair/i.test(obj.name)) return;
         const mat = src.clone();
-        if (seed % 2 === 0) mat.color.lerp(tint, 0.4);
+        if (seed % 2 === 0) mat.color.lerp(tint, 0.45);
         else mat.color.multiply(tint);
         obj.material = mat;
         collected.push(mat);
@@ -321,8 +364,8 @@ export function createStreetAssets(): StreetAssets {
       const group = new THREE.Group();
       group.add(model);
       const mixer = new THREE.AnimationMixer(model);
-      const walkClip = THREE.AnimationClip.findByName(spec.template.animations, spec.walk) ?? spec.template.animations[0];
-      const idleClip = THREE.AnimationClip.findByName(spec.template.animations, spec.idle) ?? walkClip;
+      const walkClip = THREE.AnimationClip.findByName(spec.clips, 'Walk') ?? spec.clips[0];
+      const idleClip = THREE.AnimationClip.findByName(spec.clips, 'Idle') ?? walkClip;
       const walk = mixer.clipAction(walkClip);
       const idle = mixer.clipAction(idleClip);
       walk.enabled = true;
