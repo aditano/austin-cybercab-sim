@@ -4,23 +4,25 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#171a18">
-  <title>Austin • Cybercab Experience</title>
+  <title>Austin Cybercab · Unofficial Fan Sim</title>
   <style>
-    #boot{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:#1c241c;color:#f4efe4;font-family:Georgia,"Times New Roman",serif}
+    #boot{position:fixed;inset:0;z-index:40;display:grid;place-items:center;background:#111315;color:#f4efe4;font-family:Georgia,"Times New Roman",serif}
     #boot .card{width:min(420px,calc(100% - 40px))}
-    #boot .kicker{letter-spacing:.18em;text-transform:uppercase;font-size:11px;color:#d7c48a;margin:0 0 10px}
+    #boot .kicker{letter-spacing:.18em;text-transform:uppercase;font-size:11px;color:#00bfb7;margin:0 0 10px}
     #boot h1{font-weight:500;font-size:clamp(28px,6vw,36px);margin:0 0 18px;letter-spacing:-.03em}
     #boot .bar{height:3px;background:#ffffff22;border-radius:3px;overflow:hidden}
-    #boot-fill{display:block;height:100%;width:8%;background:#d7c48a}
+    #boot-fill{display:block;height:100%;width:8%;background:#00bfb7}
     #boot-status{letter-spacing:.02em;font-size:14px;color:#e7e2d6;margin:12px 0 0;font-family:system-ui,sans-serif}
-    #boot-retry{margin-top:16px;background:#d7c48a;color:#1c241c;border:0;border-radius:8px;padding:12px 16px;font:600 14px system-ui,sans-serif}
+    #boot-retry{margin-top:16px;background:#00bfb7;color:#06201f;border:0;border-radius:8px;padding:12px 16px;font:600 14px system-ui,sans-serif}
+    #boot .fan{margin:10px 0 0;font:600 11px/1.4 system-ui,sans-serif;color:#9a9ca3;letter-spacing:.04em}
   </style>
 </head>
 <body>
   <div id="boot" role="status" aria-live="polite">
     <div class="card">
-      <p class="kicker">Austin · Cybercab</p>
+      <p class="kicker">Unofficial fan sim · Austin</p>
       <h1>Loading the avenue</h1>
+      <p class="fan">Not affiliated with Tesla. Local Robotaxi recreation.</p>
       <div class="bar"><span id="boot-fill"></span></div>
       <p id="boot-status">Fetching downtown</p>
       <button id="boot-retry" type="button" hidden>Reload</button>

@@ -280,6 +280,62 @@ export async function loadCybercab() {
   group.add(cabinLamp);
   const cabinGlass = ['windshield', 'windshield-frit', 'door-glass-l', 'door-glass-r', 'door-frit-l', 'door-frit-r', 'quarter-glass', 'quarter-frit'];
 
+  // Modeled fan-sim cabin: two seats, console, landscape touchscreen, headliner stop. Not a factory scan.
+  const cabinInterior = new THREE.Group();
+  cabinInterior.name = 'cabin-interior';
+  cabinInterior.visible = false;
+  const seatMat = new THREE.MeshStandardMaterial({ color: 0x1a1d22, roughness: 0.72, metalness: 0.08 });
+  const accentMat = new THREE.MeshStandardMaterial({ color: 0x2a2e35, roughness: 0.55, metalness: 0.2 });
+  const screenMat = new THREE.MeshStandardMaterial({
+    color: 0x0b1214, emissive: 0x00bfb7, emissiveIntensity: 0.22, roughness: 0.35, metalness: 0.1,
+  });
+  function seat(side: number) {
+    const shell = new THREE.Group();
+    const cushion = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.12, 0.52), seatMat);
+    cushion.position.set(side * 0.38, 0.52, 0.18);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.58, 0.1), seatMat);
+    back.position.set(side * 0.38, 0.86, 0.4);
+    back.rotation.x = -0.12;
+    shell.add(cushion, back);
+    return shell;
+  }
+  cabinInterior.add(seat(-1), seat(1));
+  const console = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.7), accentMat);
+  console.position.set(0, 0.58, -0.05);
+  cabinInterior.add(console);
+  const screen = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 0.36), screenMat);
+  screen.name = 'cabin-screen';
+  screen.position.set(0, 0.92, -0.42);
+  screen.rotation.x = -0.18;
+  cabinInterior.add(screen);
+  const stopBtn = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.04, 0.04, 0.02, 16),
+    new THREE.MeshStandardMaterial({ color: 0xff3b30, emissive: 0x661010, emissiveIntensity: 0.8, roughness: 0.4 }),
+  );
+  stopBtn.name = 'cabin-stop';
+  stopBtn.position.set(0, 1.28, 0.05);
+  cabinInterior.add(stopBtn);
+  const doorCardL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.35, 0.7), accentMat);
+  doorCardL.position.set(-0.78, 0.85, 0.05);
+  const doorCardR = doorCardL.clone();
+  doorCardR.position.x = 0.78;
+  cabinInterior.add(doorCardL, doorCardR);
+  group.add(cabinInterior);
+
+  // Exterior paint polish (runtime; Blender rebuild not available in this environment).
+  model.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    for (const mat of materialsOf(obj)) {
+      if (!(mat instanceof THREE.MeshPhysicalMaterial)) continue;
+      if (/paint|body|shell/i.test(obj.name) || (mat.clearcoat > 0.15 && mat.metalness > 0.35)) {
+        mat.clearcoat = Math.max(mat.clearcoat, 0.85);
+        mat.clearcoatRoughness = Math.min(mat.clearcoatRoughness, 0.12);
+        mat.envMapIntensity = Math.max(mat.envMapIntensity, 1.9);
+        mat.roughness = Math.min(mat.roughness, 0.28);
+      }
+    }
+  });
+
   const contact = new THREE.Mesh(
     new THREE.CircleGeometry(1.15, 24),
     new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }),
@@ -337,10 +393,11 @@ export async function loadCybercab() {
     frontTurnMat.emissive.copy(frontMat.emissive);
     frontTurnMat.emissiveIntensity = identify ? 6.5 : 8;
     lampLight.color.copy(glowColor);
-    if (brake) {
+    // Rider guide: rear bar stays red at curb stops (pickup / drop-off) with hazards.
+    if (brake || hazard || signals.pickup) {
       rearMat.color.setRGB(1, 0.015, 0.008);
       rearMat.emissive.setRGB(1, 0.012, 0.006);
-      rearMat.emissiveIntensity = 9;
+      rearMat.emissiveIntensity = brake ? 9 : 5.2;
       rearMat.toneMapped = false;
     } else {
       rearMat.color.copy(rearColor);
@@ -425,7 +482,9 @@ export async function loadCybercab() {
         const part = named.get(name);
         if (part) part.visible = !inside;
       }
-      cabinLamp.intensity = inside ? 1.15 : 0;
+      cabinInterior.visible = inside;
+      cabinLamp.intensity = inside ? 1.35 : 0;
+      screenMat.emissiveIntensity = inside ? 0.45 : 0.12;
     },
     setHazards(on: boolean) { hazardsOn = on; },
     setPhase(next: string) {

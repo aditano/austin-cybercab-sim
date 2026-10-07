@@ -30,7 +30,7 @@ type Cam = 'walk' | 'chase' | 'cabin';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 app.innerHTML = `<canvas id="scene"></canvas><div class="vignette"></div>
-<header><a class="brand" href="./"><span class="brand-icon">C</span> CYBERCAB <span class="brand-sub">AUSTIN EXPERIENCE</span></a><div class="live"><i></i> AUSTIN, TX <span>SERVICE AREA · ~288 MI²</span></div><button id="settings" class="round" aria-label="Open graphics settings" aria-expanded="false">◈</button></header>
+<header><a class="brand" href="./"><span class="brand-icon">C</span> CYBERCAB <span class="brand-sub">UNOFFICIAL FAN SIM</span></a><div class="live"><i></i> AUSTIN, TX <span>SERVICE AREA · ~288 MI²</span></div><button id="settings" class="round" aria-label="Open graphics settings" aria-expanded="false">◈</button></header>
 <div id="gfx-menu" class="gfx-menu" hidden>
   <p class="gfx-kicker">Graphics</p>
   <div class="gfx-modes">${['auto', 'low', 'medium', 'high', 'ultra'].map((mode) => `<button type="button" data-mode="${mode}">${mode === 'auto' ? 'Auto' : mode[0].toUpperCase() + mode.slice(1)}</button>`).join('')}</div>
@@ -40,13 +40,13 @@ app.innerHTML = `<canvas id="scene"></canvas><div class="vignette"></div>
   <label class="gfx-toggle"><input type="checkbox" data-toggle="post"> Post-process</label>
   <p class="gfx-note">Auto picks a preset from this device, then eases up or down from measured frame time. Low uses lighter street models.</p>
 </div>
-<aside class="chapter"><span class="eyebrow">CONGRESS AVENUE · AUSTIN</span><h1>Golden hour<br>on Congress.</h1><p>The Capitol closes the avenue.<br>Lady Bird Lake is behind you.<br>Match the Megalamp, then ride.</p><div class="chapter-line"></div><span class="small-label">01 / CONFIRM YOUR RIDE</span></aside>
+<aside class="chapter"><span class="eyebrow">CONGRESS AVENUE · AUSTIN</span><h1>Robotaxi<br>on Congress.</h1><p>Unofficial fan recreation.<br>Match the Megalamp, buckle up, then Start Ride.</p><div class="chapter-line"></div><span class="small-label">01 / CONFIRM YOUR RIDE</span></aside>
 <div class="location"><span class="location-dot">⌖</span><div><b id="location-name">Congress & 2nd</b><span id="location-detail">DOWNTOWN · CAPITOL NORTH · LAKE SOUTH</span></div></div>
 <div class="hud"><div class="speedo"><b id="speed">00</b><small>MPH</small><span id="gear">P</span></div></div>
-<aside id="phone" class="phone"><div id="phone-map" class="phone-map"></div><div class="phone-top"><b class="js-clock">6:42</b><div class="island"></div><span>5G</span></div><div class="sheet"><div class="sheet-handle"></div><div class="app-bar"><span class="avatar" aria-hidden="true"></span><b>ROBOTAXI</b><button id="alerts" type="button" class="bell" aria-label="Alerts"></button></div><div id="phone-body"></div><div id="phone-actions"></div></div><div class="home-bar"></div></aside>
+<aside id="phone" class="phone"><div id="phone-map" class="phone-map"></div><div class="phone-top"><b class="js-clock">6:42</b><div class="island"></div><span>5G</span></div><p class="fan-strip">UNOFFICIAL FAN SIM · NOT AFFILIATED WITH TESLA</p><div class="sheet"><div class="sheet-handle"></div><div class="app-bar"><span class="avatar" aria-hidden="true"></span><div class="app-title"><b>ROBOTAXI</b><span class="fan-chip">FAN SIM</span></div><button id="alerts" type="button" class="bell" aria-label="Alerts"></button></div><div id="phone-body"></div><div id="phone-actions"></div></div><div class="home-bar"></div></aside>
 <section id="cabin" class="cabin-panel" hidden></section>
 <div id="toast" role="status"></div>
-<footer><div class="controls"><span><kbd>DRAG</kbd> Look</span><span><kbd>W A S D</kbd> Walk</span><span><kbd>C</kbd> Camera</span><span><kbd>P</kbd> Phone</span><span><kbd>F</kbd> Fullscreen</span></div><div class="concept">INDEPENDENT CONCEPT SIMULATION <span>·</span> <a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap</a><a href="./docs.html" target="_blank">Sources & accuracy ↗</a></div></footer>
+<footer><div class="controls"><span><kbd>DRAG</kbd> Look</span><span><kbd>W A S D</kbd> Walk</span><span><kbd>C</kbd> Camera</span><span><kbd>P</kbd> Phone</span><span><kbd>F</kbd> Fullscreen</span></div><div class="concept">UNOFFICIAL FAN SIM · NOT AFFILIATED WITH TESLA <span>·</span> <a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap</a><a href="./docs.html" target="_blank">Sources & accuracy ↗</a></div></footer>
 <div class="ride-progress"><div id="progress-fill"></div></div>
 <div id="stick" hidden aria-label="Walk joystick"><div id="nub"></div></div>
 <button id="show-phone" type="button" hidden>Phone</button>
@@ -313,12 +313,12 @@ function mapMarkup(progress = 0) {
   const showRoute = phase !== 'explore';
   return `<div class="map"><svg viewBox="0 0 280 245"><rect width="280" height="245" fill="#1a1d21"/>
     <path d="${geofencePath()}" fill="none" stroke="#3d4a46" stroke-width="${overview ? 1.2 : 0}" stroke-dasharray="3 3"/>
-    ${overview ? '' : mapFeatures}<path d="${line}" stroke="${showRoute ? '#2ee6d6' : '#2ee6d600'}" stroke-width="${overview ? 2 : 4.5}" fill="none" stroke-linecap="round"/>
+    ${overview ? '' : mapFeatures}<path d="${line}" stroke="${showRoute ? '#00bfb7' : '#00bfb700'}" stroke-width="${overview ? 2 : 4.5}" fill="none" stroke-linecap="round"/>
     <circle cx="${sx}" cy="${sy}" r="7" fill="#121416" stroke="#f4f4f4" stroke-width="3"/>
-    <circle cx="${sx}" cy="${sy}" r="2.2" fill="#2ee6d6"/>
+    <circle cx="${sx}" cy="${sy}" r="2.2" fill="#00bfb7"/>
     <rect x="${(ex - 5).toFixed(1)}" y="${(ey - 5).toFixed(1)}" width="10" height="10" fill="#f4f4f4"/>
     <circle data-cab="1" cx="${px}" cy="${py}" r="6.5" fill="#121416" stroke="#f4f4f4" stroke-width="3"/>
-    <circle data-cab-core="1" cx="${px}" cy="${py}" r="2" fill="#2ee6d6"/></svg>
+    <circle data-cab-core="1" cx="${px}" cy="${py}" r="2" fill="#00bfb7"/></svg>
     <button class="map-expand" type="button" aria-label="Toggle map zoom">${overview ? '⊕' : '⌖'}</button></div>`;
 }
 
@@ -423,9 +423,9 @@ function renderUI() {
       <button type="button" class="option on" id="opt-cab"><b>Cybercab</b><small>2 seats</small><span id="dispatch-eta">~3 min</span></button>
       <button type="button" class="option" id="opt-y"><b>Model Y</b><small>4 seats</small><span>Later</span></button>
     </div>
-    <div class="fare"><span><b class="fare-name">Cybercab</b> <small>Simulated fare</small></span><b>$4.20</b></div>
+    <div class="fare"><span><b class="fare-name">Cybercab</b> <small>Simulated fare · not Tesla pricing</small></span><b>$4.20</b></div>
     <p class="geo-note">${destInside ? GEOFENCE_NOTE : 'That place is outside the approximated service area, so Confirm stays off.'}</p>
-    <p class="micro">Independent concept. No real booking, fare, or Tesla connection.</p>`;
+    <p class="micro">Unofficial fan sim. Not affiliated with Tesla. No real booking, fare, or vehicle.</p>`;
   if (phase === 'explore') actions = `<button class="primary" id="request" ${inside ? '' : 'disabled'}>Confirm</button>${walkBtn}`;
   if (phase === 'dispatch') body.innerHTML = `<h2 class="sr-only">On the way</h2>
     <div class="vehicle-row"><div class="car-thumb" aria-hidden="true"></div>
@@ -448,7 +448,7 @@ function renderUI() {
     <div class="stars" role="group" aria-label="Rate this ride">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="star" data-star="${n}" aria-label="${n} star">★</button>`).join('')}</div>
     <p class="phone-sub">Check for belongings. The doors close after you finish.</p>`;
   if (phase === 'exited') actions = `<button class="primary" id="finish">Done</button>${walkBtn}`;
-  if (phase === 'complete') body.innerHTML = `<h2>Trip complete</h2><p class="phone-sub">Thanks for riding. This was a local simulation, not a Tesla trip.</p>
+  if (phase === 'complete') body.innerHTML = `<h2>Trip complete</h2><p class="phone-sub">Thanks for riding. Unofficial fan sim — not a Tesla trip or booking.</p>
     <div class="stars" role="group" aria-label="Rate this ride">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="star" data-star="${n}" aria-label="${n} star">★</button>`).join('')}</div>
     <div class="trip-summary"><span>Distance<b>${((dropoffDist - pickupDist) / 1000).toFixed(2)} km</b></span><span>Megalamp<b>${MEGALAMP.name}</b></span></div>`;
   if (phase === 'complete') actions = `<button class="primary" id="restart">Request</button>${walkBtn}`;
@@ -461,7 +461,7 @@ function renderUI() {
       : 'Buckle up. The door closes when everyone is buckled. Then Start Ride.';
     const rideStatus = phase === 'ride' && !paused ? 'EN ROUTE' : 'PARK';
     const kicker = phase === 'arrived' ? 'ARRIVED' : phase === 'boarded' ? 'BUCKLE UP' : 'DESTINATION';
-    cabin.innerHTML = `<div class="cabin-header"><span class="cabin-status">${rideStatus}</span><span class="js-clock">6:42</span><span>${temperature}°</span><span>${belted ? 'BELT' : 'UNBUCKLED'}</span><span>CAM</span></div>
+    cabin.innerHTML = `<div class="cabin-header"><span class="cabin-status">${rideStatus}</span><span class="js-clock">6:42</span><span>${temperature}°</span><span>${belted ? 'BELT' : 'UNBUCKLED'}</span><span class="cabin-fan">FAN SIM</span></div>
       <div class="cabin-grid"><div class="cabin-map">${map}</div>
       <div class="cabin-copy"><small>${kicker}</small>
       <h2>${DROPOFF.name}</h2>
@@ -890,10 +890,14 @@ function applyWalk(dt: number) {
   const iz = (Number(keys.has('s')) - Number(keys.has('w'))) + stickY;
   walkMove.set(ix, 0, iz);
   if (walkMove.lengthSq() > 1) walkMove.setLength(1);
-  if (walkMove.lengthSq() < 0.0004) return;
+  if (walkMove.lengthSq() < 0.0004) {
+    walk.y = ROAD_Y + 1.62;
+    return;
+  }
   walkMove.applyAxisAngle(upAxis, lookYaw).multiplyScalar(dt * 4.4);
   walk.add(walkMove);
   constrainWalk();
+  walk.y = ROAD_Y + 1.62;
 }
 
 let holdCam = false;
@@ -1243,6 +1247,8 @@ void Promise.all([
   setBoot('Placing the Cybercab', 92);
   mountCab(loaded);
   await restyleWorld();
+  placeCab(distance, phase === 'pickup' || phase === 'boarded' || phase === 'arrived' ? CURB_PULL : 0);
+  walk.y = ROAD_Y + 1.62;
   renderFrame();
   hideBoot();
 }).catch((error) => {
