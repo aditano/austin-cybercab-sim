@@ -274,6 +274,12 @@ export async function loadCybercab() {
     return steer;
   });
 
+  const cabinLamp = new THREE.PointLight(0xffe1c4, 0, 2.6, 2);
+  cabinLamp.position.set(0, 1.18, 0.28);
+  cabinLamp.castShadow = false;
+  group.add(cabinLamp);
+  const cabinGlass = ['windshield', 'windshield-frit', 'door-glass-l', 'door-glass-r', 'door-frit-l', 'door-frit-r', 'quarter-glass', 'quarter-frit'];
+
   const contact = new THREE.Mesh(
     new THREE.CircleGeometry(1.15, 24),
     new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false }),
@@ -405,12 +411,16 @@ export async function loadCybercab() {
       };
     },
     setLamp(mode: LampMode) { lampMode = mode; },
-    /** Glass is alpha-blended and double-sided, so the cabin looks through it. */
-    setCabinView(_inside: boolean) {
-      for (const name of ['windshield', 'door-glass-l', 'door-glass-r', 'quarter-glass']) {
+    /**
+     * The windshield is a dark alpha skin. From the seat it reads as a black shell,
+     * so the cabin view hides that skin and lights the seats. Chase and curb views keep the glass.
+     */
+    setCabinView(inside: boolean) {
+      for (const name of cabinGlass) {
         const part = named.get(name);
-        if (part) part.visible = true;
+        if (part) part.visible = !inside;
       }
+      cabinLamp.intensity = inside ? 1.15 : 0;
     },
     setHazards(on: boolean) { hazardsOn = on; },
     setPhase(next: string) {

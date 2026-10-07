@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  DESTINATIONS, blockedSpeed, defaultQuality, doorTarget, parseSnapshot, pixelRatioFor,
-  pointInRing, shadowMapSize, stepDoor, stepPedestrian, togglePhone,
+  CABIN_EYE, CABIN_LOOK, DESTINATIONS, arrivalCopy, blockedSpeed, defaultQuality, doorTarget, easeVehicleSpeed, keepDoorRequest, npcHeading, parseSnapshot, pixelRatioFor,
+  pointInRing, roadLevel, shadowMapSize, stepDoor, stepPedestrian, stepTrafficDist, togglePhone,
 } from '../src/logic.ts';
 
 const geo = fs.readFileSync(new URL('../src/geo.ts', import.meta.url), 'utf8');
@@ -94,4 +94,25 @@ test('phone toggle is ignored during the ride and snapshots reject junk', () => 
   assert.equal(saved.temperature, 28);
   assert.equal(saved.destinationId, 'roundrock');
   assert.equal(saved.phoneVisible, false);
+});
+
+test('cabin aim, arrival door, traffic wrap, and road noise stay physical', () => {
+  assert.ok(CABIN_LOOK.y > 0.7 && CABIN_LOOK.y < CABIN_EYE.y);
+  assert.equal(keepDoorRequest('ride', true), false);
+  assert.equal(keepDoorRequest('arrived', true), true);
+  assert.equal(keepDoorRequest('explore', true), false);
+  assert.equal(arrivalCopy(4), 'At the curb');
+  assert.equal(arrivalCopy(20), 'Arriving now');
+  assert.equal(arrivalCopy(80), '80 m away');
+  assert.ok(Math.abs(npcHeading(0.2, true) - (0.2 + Math.PI)) < 1e-9);
+  const wrapped = stepTrafficDist({ dist: 5, speed: 20, dt: 1, against: true, routeLength: 400, cabDist: 40 });
+  assert.ok(wrapped > 300, `oncoming car did not wrap north (${wrapped})`);
+  const eased = easeVehicleSpeed(10, 0, 0.05);
+  assert.ok(eased < 10 && eased > 8, `speed snapped instead of braking (${eased})`);
+  assert.equal(roadLevel(0), 0);
+  assert.ok(roadLevel(13.4) > 0.02 && roadLevel(13.4) <= 0.04);
+  const south = stepPedestrian({ crossing: false, t: 0, dist: 40 }, {
+    dt: 1, cabDist: 200, red: false, nearCross: false, wantStart: false, routeLength: 400, direction: -1,
+  });
+  assert.ok(south.dist < 40, `west sidewalk pedestrian walked north (${south.dist})`);
 });

@@ -69,6 +69,7 @@ assert.ok((await state()).distance > stopped);
 await page.screenshot({ path: 'output/validation/03-cabin.png', timeout: 15000 }).catch(() => {});
 await advance(180000);
 assert.equal((await state()).phase, 'arrived');
+assert.ok((await state()).door < 0.2, `arrival opened the door early (${(await state()).door})`);
 await page.screenshot({ path: 'output/validation/04-arrived.png', timeout: 15000 }).catch(() => {});
 await click('#exit-cabin');
 assert.equal((await state()).phase, 'exited');

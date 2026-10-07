@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CAPITOL, ROAD_Y } from './geo';
-import type { StreetAssets, PropKind } from './assets';
+import type { HeroKind, StreetAssets, PropKind } from './assets';
 import { kindFromIndex } from './assets';
 import { streetBudget, type Quality } from './logic';
 
@@ -108,7 +108,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
   leafMat.userData.castShadow=false;
   const waterMaterial=new THREE.MeshPhysicalMaterial({color:0x2a656c,metalness:0.55,roughness:0.08,transparent:true,opacity:0.92,envMapIntensity:1.7,clearcoat:1,clearcoatRoughness:.12});
   const windowMaterial=new THREE.MeshPhysicalMaterial({color:0x8eafb6,metalness:.08,roughness:.04,envMapIntensity:1.85,clearcoat:1,clearcoatRoughness:.05,transparent:true,opacity:.78});
-  const glassMaterials=[0x6e8e98,0x7f9aa4,0x5e808c,0x89a8ae].map(color=>new THREE.MeshPhysicalMaterial({color,metalness:.2,roughness:.02,envMapIntensity:2.4,clearcoat:1,clearcoatRoughness:.04,transparent:true,opacity:.48}));
+  const glassMaterials=[0x9bb8c0,0xa9c6cc,0x8eafb8,0xb7d0d4].map(color=>new THREE.MeshPhysicalMaterial({color,metalness:.62,roughness:.08,envMapIntensity:2.6,clearcoat:1,clearcoatRoughness:.12,transparent:true,opacity:.55,ior:1.45}));
   const frame=new THREE.MeshStandardMaterial({color:0x6a726f,metalness:.72,roughness:.3,envMapIntensity:1});
   const litWindow=new THREE.MeshStandardMaterial({color:0xffe2b0,emissive:0xffc57a,emissiveIntensity:1.15,roughness:0.28});
   const buildingMaterials=[0xf3efe4,0xe6dfd2,0xf7f1e6,0xddd4c6,0xd5dbd6,0xefe6d6].map(color=>texturedMaterial(color,wallDiff,wallNor,wallRough,.55,.84));
@@ -203,7 +203,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     // Curtain wall towers, stone offices and older storefronts have distinct bay proportions.
     const curtain=h>60&&index%3!==0;
     const tall=h>72;
-    const bay=(curtain?3.2:4.2)*(tall?1.75:1),floor=(curtain?3.5:3.9)*(tall?1.9:1);
+    const bay=(curtain?6.8:8.4)*(tall?1.25:1),floor=(curtain?4.4:4.8)*(tall?1.35:1);
     const windowGroups=new Map<THREE.Material,THREE.Matrix4[]>();const obj=new THREE.Object3D();
     for(let e=1;e<pts.length;e++) {
       const a=pts[e-1],b=pts[e],len=a.distanceTo(b);if(len<3||len>350)continue;
@@ -212,8 +212,8 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       for(let y=4.7;y<h-1;y+=floor)for(let cell=0;cell<count;cell++) {
         const t=.4+spacing*(cell+.5),isLit=seeded(index*171+cell*7+Math.floor(y)*29)>.975;
         const glass=isLit?litWindow:glassMaterials[(index+Math.floor(seeded(index+cell*13+Math.floor(y))*3))%glassMaterials.length];
-        obj.position.set(a.x+dx*t+nx*.08,y,a.y+dz*t+nz*.08);
-        obj.rotation.set(0,rotation,0);obj.scale.set(spacing*(curtain?.93:.68),curtain?2.92:2.3,.13);obj.updateMatrix();
+        obj.position.set(a.x+dx*t+nx*.1,y,a.y+dz*t+nz*.1);
+        obj.rotation.set(0,rotation,0);obj.scale.set(spacing*(curtain?.82:.7),curtain?3.35:2.85,.1);obj.updateMatrix();
         const group=windowGroups.get(glass)||[];group.push(obj.matrix.clone());windowGroups.set(glass,group);
       }
       if(curtain) {
@@ -445,14 +445,23 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     dressed.clear();
     const budget = streetBudget(quality);
     const paints = [0xe8e4dc, 0x2c3338, 0x8d3a32, 0x1e2428, 0xd7d3c8, 0x4d5960, 0x6b7180, 0xc9c3b6, 0xbf5700, 0xdfe3e0];
-    const origin = new THREE.Vector2(165, -300);
-    const keep = (spot: StreetSpot, far: number) => origin.distanceTo(new THREE.Vector2(spot.x, spot.z)) < far;
+    const south = new THREE.Vector2(80, -20);
+    const downtown = new THREE.Vector2(165, -300);
+    const spotDist = (spot: StreetSpot, hub: THREE.Vector2) => (spot.x - hub.x) ** 2 + (spot.z - hub.y) ** 2;
+    const keep = (spot: StreetSpot, far: number) => spotDist(spot, south) < far * far || spotDist(spot, downtown) < far * far;
     const stride = Math.max(1, Math.round(budget.treeStride / 28));
     const trees = streetSpots.filter((s) => s.kind === 'tree').filter((_, i) => i % stride === 0);
+    const leafCap = quality === 'ultra' ? 36 : quality === 'high' ? 24 : quality === 'medium' ? 14 : 0;
+    const leafRadius = quality === 'medium' ? 110 : 170;
+    const nearest = (spot: StreetSpot) => Math.min(spotDist(spot, south), spotDist(spot, downtown));
+    const leafTrees = trees.filter((spot) => keep(spot, leafRadius)).sort((a, b) => nearest(a) - nearest(b)).slice(0, leafCap);
+    const leafSet = new Set(leafTrees);
+    const coneTrees = trees.filter((spot) => !leafSet.has(spot));
+    leafTrees.forEach((spot) => tree(dressed, spot.x, spot.z, spot.seed));
     const treeScale = assets.propScale('tree', quality);
-    const treeMesh = assets.instanceProp('tree', quality, trees.length);
+    const treeMesh = assets.instanceProp('tree', quality, coneTrees.length);
     if (treeMesh && treeScale) {
-      trees.forEach((spot, i) => {
+      coneTrees.forEach((spot, i) => {
         dummy.position.set(spot.x, treeScale.lift, spot.z);
         dummy.rotation.set(0, spot.yaw, 0);
         dummy.scale.setScalar(treeScale.scale * (0.86 + seeded(spot.seed) * 0.32));
@@ -461,8 +470,32 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       });
       treeMesh.instanceMatrix.needsUpdate = true;
       dressed.add(treeMesh);
-    } else {
-      trees.forEach((spot) => tree(dressed, spot.x, spot.z, spot.seed));
+    } else if (!treeMesh) {
+      coneTrees.forEach((spot) => tree(dressed, spot.x, spot.z, spot.seed));
+    }
+    function placeScan(kind: HeroKind, spot: StreetSpot, along: number, scale: number) {
+      const model = assets.spawnHero(kind, scale);
+      if (!model) return;
+      const yaw = spot.yaw + Math.PI;
+      const nx = Math.sin(yaw);
+      const nz = Math.cos(yaw);
+      model.position.set(spot.x + nx * along, 0, spot.z + nz * along);
+      model.rotation.y = yaw;
+      if (kind === 'facade') {
+        model.traverse((obj) => {
+          if (obj instanceof THREE.Mesh) obj.castShadow = false;
+        });
+      }
+      dressed.add(model);
+    }
+    if (quality !== 'low') {
+      const anchors = streetSpots.filter((s) => s.kind === 'tree' && keep(s, 240)).sort((a, b) => spotDist(a, south) - spotDist(b, south));
+      const facadeCount = quality === 'ultra' ? 2 : 1;
+      const escapeCount = quality === 'medium' ? 2 : 4;
+      const shrubCount = quality === 'medium' ? 6 : 10;
+      anchors.filter((_, i) => i % 5 === 0).slice(0, facadeCount).forEach((spot) => placeScan('facade', spot, 1.4, 1));
+      anchors.filter((_, i) => i % 5 === 2).slice(0, escapeCount).forEach((spot) => placeScan('escape', spot, -1.8, 1));
+      anchors.filter((_, i) => i % 3 === 1).slice(0, shrubCount).forEach((spot) => placeScan('shrub', spot, 0.2, 2.6));
     }
     const instanceKinds: PropKind[] = ['lamp', 'planter', 'stop', 'pole', 'cone', 'dumpster', 'signal', 'street-sign', 'warn'];
     for (const kind of instanceKinds) {
