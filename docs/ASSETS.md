@@ -58,9 +58,23 @@ These three are CC0 scans, mesh-simplified so a phone on Low can skip them. Low 
 
 The phone wordmark is set in [Inter](https://fonts.google.com/specimen/Inter) (SIL Open Font License), a free stand-in. It is not Tesla’s Universal Sans, and no Tesla logo file is bundled.
 
-## Textures and HDRI (already in the repo)
+## Textures and HDRI
 
-Poly Haven CC0: Evening Road 01 Pure Sky, Asphalt 02, Concrete Floor Worn 001, Concrete Wall 008, Bark Brown 02, Tree Small 02 leaf atlas. See the README.
+Poly Haven CC0: Kloofendal 48d Partly Cloudy Pure Sky (1K, golden hour), Evening Road 01 Pure Sky (kept, unused by the loader), Asphalt 02, Concrete Floor Worn 001, Concrete Wall 008, Bark Brown 02, Tree Small 02 leaf atlas, Roof Tiles 14.
+
+[https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky)  
+[https://polyhaven.com/a/roof_tiles_14](https://polyhaven.com/a/roof_tiles_14)
+
+ambientCG CC0 facade photographs, color only, recompressed to 1K JPEG. Each building picks one. Roofs use the Poly Haven tile. Dark texels in the photo get a cheap interior shift so the windows are not flat stickers.
+
+| File | Asset | URL |
+| --- | --- | --- |
+| `textures/facades/facade-a.jpg` | Facade001 | https://ambientcg.com/view?id=Facade001 |
+| `textures/facades/facade-b.jpg` | Facade005 | https://ambientcg.com/view?id=Facade005 |
+| `textures/facades/facade-c.jpg` | Facade007 | https://ambientcg.com/view?id=Facade007 |
+| `textures/facades/facade-d.jpg` | Facade014 | https://ambientcg.com/view?id=Facade014 |
+
+Kenney stop and warning signs are still in `public/models` but are not instanced. Their glTF positions are integer-quantized and became a giant octagon at street scale.
 
 ## Map
 

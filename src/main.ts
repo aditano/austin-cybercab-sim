@@ -5,6 +5,8 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
 import { Sky } from 'three/addons/objects/Sky.js';
 import { HDRLoader } from 'three/addons/loaders/HDRLoader.js';
 import { createWorld, loadMapData } from './world';
@@ -74,18 +76,18 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.localClippingEnabled = true;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#e4c3a2');
-scene.fog = new THREE.FogExp2('#e7c8a8', 0.0002);
+scene.background = new THREE.Color('#e8c4a0');
+scene.fog = new THREE.FogExp2('#e4c2a4', 0.0034);
 const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.15, 3200);
 
 const sky = new Sky();
 sky.scale.setScalar(45000);
 const su = sky.material.uniforms;
-su.turbidity.value = 3.4;
-su.rayleigh.value = 1.8;
-su.mieCoefficient.value = 0.006;
-su.mieDirectionalG.value = 0.82;
-const sunPosition = new THREE.Vector3(-0.95, 0.155, 0.42);
+su.turbidity.value = 6.2;
+su.rayleigh.value = 2.4;
+su.mieCoefficient.value = 0.012;
+su.mieDirectionalG.value = 0.86;
+const sunPosition = new THREE.Vector3(-0.72, 0.09, 0.62);
 const sunOffset = sunPosition.clone().normalize().multiplyScalar(280);
 su.sunPosition.value.copy(sunPosition);
 scene.add(sky);
@@ -96,7 +98,7 @@ scene.environment = skyEnv;
 scene.environmentIntensity = 0.95;
 
 scene.add(new THREE.HemisphereLight('#ffd7b0', '#5c4638', 0.28));
-const sun = new THREE.DirectionalLight('#ffb56a', 3.05);
+const sun = new THREE.DirectionalLight('#ffc07a', 3.35);
 sun.position.copy(sunOffset);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
@@ -183,6 +185,25 @@ composer.addPass(bloomPass);
 const smaaPass = new SMAAPass();
 smaaPass.enabled = !lockSoftware;
 composer.addPass(smaaPass);
+const gradePass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null } },
+  vertexShader: 'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+  fragmentShader: `uniform sampler2D tDiffuse;varying vec2 vUv;
+    void main(){
+      vec3 c=texture2D(tDiffuse,vUv).rgb;
+      float l=dot(c,vec3(0.2126,0.7152,0.0722));
+      c=mix(vec3(l),c,1.12);
+      c.r+=0.035*(c.r-0.35);
+      c.b+=0.03*(0.45-l);
+      c=pow(max(c,0.0),vec3(0.94));
+      gl_FragColor=vec4(c,1.0);
+    }`,
+});
+gradePass.enabled = false;
+composer.addPass(gradePass);
+const bokehPass = new BokehPass(scene, camera, { focus: 8, aperture: 0.00015, maxblur: 0.006 });
+bokehPass.enabled = false;
+composer.addPass(bokehPass);
 composer.addPass(new OutputPass());
 
 const lighting = createLighting(renderer, scene, camera, sun, composer, sunOffset, sky);
@@ -264,8 +285,8 @@ void loadMapData().then(data => {
     const [x, y] = mapPoint(project(lon, lat));
     return `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
-  mapFeatures = data.buildings.map((b: { coordinates: number[][] }) => `<path d="${path(b.coordinates)}Z" fill="#e4dfd6"/>`).join('')
-    + data.roads.map((r: { coordinates: number[][] }) => `<path d="${path(r.coordinates)}" fill="none" stroke="#ffffff" stroke-width="3.2"/>`).join('');
+  mapFeatures = data.buildings.map((b: { coordinates: number[][] }) => `<path d="${path(b.coordinates)}Z" fill="#2a3036"/>`).join('')
+    + data.roads.map((r: { coordinates: number[][] }) => `<path d="${path(r.coordinates)}" fill="none" stroke="#4c5662" stroke-width="3.2"/>`).join('');
   if (uiReady) renderUI();
 }).catch(() => toast('Map unavailable. Showing the bundled route.'));
 
@@ -291,14 +312,14 @@ function mapMarkup(progress = 0) {
   const [sx, sy] = mapPoint(sample(pickupDist).position, overview);
   const [ex, ey] = mapPoint(sample(dropoffDist).position, overview);
   const showRoute = phase !== 'explore';
-  return `<div class="map"><svg viewBox="0 0 280 245"><rect width="280" height="245" fill="#efeae2"/>
-    <path d="${geofencePath()}" fill="none" stroke="#c8c2b8" stroke-width="${overview ? 1.2 : 0}" stroke-dasharray="3 3"/>
-    ${overview ? '' : mapFeatures}<path d="${line}" stroke="${showRoute ? '#171717' : '#17171700'}" stroke-width="${overview ? 2 : 4.5}" fill="none" stroke-linecap="round"/>
-    <circle cx="${sx}" cy="${sy}" r="7" fill="#fff" stroke="#171717" stroke-width="3"/>
-    <circle cx="${sx}" cy="${sy}" r="2.2" fill="#171717"/>
-    <rect x="${(ex - 5).toFixed(1)}" y="${(ey - 5).toFixed(1)}" width="10" height="10" fill="#171717"/>
-    <circle data-cab="1" cx="${px}" cy="${py}" r="6.5" fill="#fff" stroke="#171717" stroke-width="3"/>
-    <circle data-cab-core="1" cx="${px}" cy="${py}" r="2" fill="#171717"/></svg>
+  return `<div class="map"><svg viewBox="0 0 280 245"><rect width="280" height="245" fill="#1a1d21"/>
+    <path d="${geofencePath()}" fill="none" stroke="#3d4a46" stroke-width="${overview ? 1.2 : 0}" stroke-dasharray="3 3"/>
+    ${overview ? '' : mapFeatures}<path d="${line}" stroke="${showRoute ? '#2ee6d6' : '#2ee6d600'}" stroke-width="${overview ? 2 : 4.5}" fill="none" stroke-linecap="round"/>
+    <circle cx="${sx}" cy="${sy}" r="7" fill="#121416" stroke="#f4f4f4" stroke-width="3"/>
+    <circle cx="${sx}" cy="${sy}" r="2.2" fill="#2ee6d6"/>
+    <rect x="${(ex - 5).toFixed(1)}" y="${(ey - 5).toFixed(1)}" width="10" height="10" fill="#f4f4f4"/>
+    <circle data-cab="1" cx="${px}" cy="${py}" r="6.5" fill="#121416" stroke="#f4f4f4" stroke-width="3"/>
+    <circle data-cab-core="1" cx="${px}" cy="${py}" r="2" fill="#2ee6d6"/></svg>
     <button class="map-expand" type="button" aria-label="Toggle map zoom">${overview ? '⊕' : '⌖'}</button></div>`;
 }
 
@@ -376,7 +397,9 @@ function renderUI() {
   const chapter = document.querySelector<HTMLElement>('.chapter')!;
   chapter.style.display = phase === 'explore' ? 'block' : 'none';
   phone.hidden = !phoneVisible || phase === 'ride';
-  phone.classList.toggle('matching', phase === 'dispatch' || phase === 'pickup');
+  phone.classList.toggle('matching', phase === 'dispatch');
+  phone.classList.toggle('enter-glow', phase === 'pickup');
+  phone.style.setProperty('--lamp', MEGALAMP.hex);
   cabin.hidden = phase !== 'ride' && phase !== 'boarded' && phase !== 'arrived';
   cabin.classList.toggle('riding', phase === 'ride');
   const map = mapMarkup((distance - pickupDist) / Math.max(1, dropoffDist - pickupDist));
@@ -397,7 +420,11 @@ function renderUI() {
     ${places}
     <div class="route-card"><div class="route-row"><i class="dot"></i><div><small>PICKUP</small><b>${PICKUP.name}</b></div><span class="chip in">In area</span></div>
     <div class="route-row"><i class="square"></i><div><small>DROP OFF</small><b>${dest.name}</b></div><span class="chip ${destInside ? 'in' : 'out'}">${destInside ? 'In area' : 'Outside'}</span></div></div>
-    <div class="fare"><span><b class="fare-name">Cybercab</b> <small>1 rider · Simulated</small></span><b id="dispatch-eta">~3 min</b></div>
+    <div class="ride-options" role="group" aria-label="Vehicle">
+      <button type="button" class="option on" id="opt-cab"><b>Cybercab</b><small>2 seats</small><span id="dispatch-eta">~3 min</span></button>
+      <button type="button" class="option" id="opt-y"><b>Model Y</b><small>4 seats</small><span>Later</span></button>
+    </div>
+    <div class="fare"><span><b class="fare-name">Cybercab</b> <small>Simulated fare</small></span><b>$4.20</b></div>
     <p class="geo-note">${destInside ? GEOFENCE_NOTE : 'That place is outside the approximated service area, so Confirm stays off.'}</p>
     <p class="micro">Independent concept. No real booking, fare, or Tesla connection.</p>`;
   if (phase === 'explore') actions = `<button class="primary" id="request" ${inside ? '' : 'disabled'}>Confirm</button>${walkBtn}`;
@@ -408,13 +435,12 @@ function renderUI() {
     <b class="eta" id="dispatch-eta">${arrivalCopy(Math.max(0, pickupDist - distance))}</b></div>
     <p class="phone-sub">Match the front light bar and the plate before you get in.</p>`;
   if (phase === 'dispatch') actions = `<button class="text-btn" id="cancel" type="button">Cancel</button>${walkBtn}`;
-  if (phase === 'pickup') body.innerHTML = `<h2>Your Cybercab is here</h2>
-    <div class="vehicle-row"><div class="car-thumb" aria-hidden="true"></div>
-    <div class="vehicle-meta"><div class="plate-badge"><span>TEXAS</span><b>${VEHICLE_PLATE}</b></div>
-    <div class="color-line"><i style="background:${MEGALAMP.hex}"></i><b>${MEGALAMP.name}</b></div></div>
-    <b class="eta">Now</b></div>
-    <p class="phone-sub">Hazards are on. The front bar is ${MEGALAMP.name}. Confirm the plate, then get in.</p>`;
-  if (phase === 'pickup') actions = `<button class="primary" id="enter" type="button">Get in</button><button class="text-btn" id="cancel" type="button">Cancel ride</button>${walkBtn}`;
+  if (phase === 'pickup') body.innerHTML = `<div class="enter-arrow" aria-hidden="true"></div>
+    <p class="enter-kicker">Your Cybercab</p>
+    <p class="enter-distance">12 m</p>
+    <div class="plate-badge enter-plate"><span>TEXAS</span><b>${VEHICLE_PLATE}</b></div>
+    <p class="phone-sub enter-copy">The front bar is ${MEGALAMP.name}. Match this screen, then open the doors.</p>`;
+  if (phase === 'pickup') actions = `<div class="enter-row"><button class="text-btn" id="honk" type="button">Honk</button><button class="text-btn" id="flash" type="button">Flash</button></div><button class="primary" id="enter" type="button">Open doors</button><button class="text-btn" id="cancel" type="button">Cancel ride</button>${walkBtn}`;
   if (phase === 'boarded') body.innerHTML = `<h2>Buckle up</h2><p class="phone-sub">The door closes once everyone is buckled. Then tap Start Ride here or on the cabin screen.</p>`;
   if (phase === 'boarded') actions = `<button class="secondary" id="buckle-phone">${belted ? 'Seatbelt fastened' : 'Fasten seatbelt'}</button><button class="primary" id="start-phone" ${canStart ? '' : 'disabled'}>${belted && !canStart ? 'Closing door…' : 'Start Ride'}</button>`;
   if (phase === 'arrived') body.innerHTML = `<h2>You've arrived</h2><p class="phone-sub">${DROPOFF.name}. Parked with hazards on.</p>`;
@@ -485,6 +511,9 @@ function renderUI() {
     if (phase !== 'ride' && phase !== 'boarded' && phase !== 'arrived') cam = 'walk';
     renderUI();
   });
+  bind('honk', () => toast('Horn.'));
+  bind('flash', () => toast('Lights flashing.'));
+  bind('opt-y', () => toast('This simulation assigns the Cybercab.'));
   bind('enter', () => {
     lookYaw = cab.group.rotation.y;
     lookPitch = 0.08;
@@ -763,16 +792,17 @@ function applyQuality(next: Quality, announce = true, fromUser = false) {
   lighting.apply(graphics, quality, lockSoftware);
   lighting.hookObject(scene);
   if (ssaoPass) {
-    ssaoPass.enabled = graphics.post && quality !== 'low' && !coarsePointer && !softwareGl;
-    ssaoPass.kernelRadius = quality === 'ultra' ? 16 : 12;
+    ssaoPass.enabled = graphics.post && quality !== 'low' && !coarsePointer && !lockSoftware;
+    ssaoPass.kernelRadius = quality === 'ultra' ? 18 : 14;
     ssaoPass.minDistance = 0.002;
-    ssaoPass.maxDistance = quality === 'ultra' ? 0.12 : 0.08;
+    ssaoPass.maxDistance = quality === 'ultra' ? 0.28 : 0.18;
   }
-  bloomPass.enabled = graphics.post && !softwareGl;
-  bloomPass.threshold = 0.96;
-  bloomPass.strength = !graphics.post ? 0 : quality === 'ultra' ? 0.16 : quality === 'high' ? 0.12 : 0.08;
+  bloomPass.enabled = graphics.post && !lockSoftware;
+  bloomPass.threshold = 0.72;
+  bloomPass.strength = !graphics.post ? 0 : quality === 'ultra' ? 0.22 : quality === 'high' ? 0.16 : 0.1;
   bloomPass.radius = quality === 'ultra' ? 0.42 : 0.32;
   smaaPass.enabled = graphics.aa && !coarsePointer && !lockSoftware;
+  gradePass.enabled = graphics.post && !lockSoftware;
   scene.environmentIntensity = quality === 'ultra' ? 1.25 : quality === 'low' ? 0.9 : 1.15;
   if (cabMounted) cab.setContactDisc(showContactDisc(graphics.shadows));
   document.querySelector('#settings')?.setAttribute('aria-label', `${gfxLabel()} graphics. Activate to open settings.`);
@@ -1038,9 +1068,17 @@ function noteFrame(dt: number) {
   void restyleWorld();
 }
 function renderFrame() {
+  const cinematic = cabMounted && cam === 'chase' && (quality === 'high' || quality === 'ultra') && !lockSoftware && graphics.post;
+  bokehPass.enabled = cinematic;
+  if (cinematic) {
+    const dof = bokehPass.uniforms as Record<string, { value: number }>;
+    dof.focus.value = Math.max(4, camera.position.distanceTo(cab.group.position));
+    dof.aperture.value = 0.00016;
+    dof.maxblur.value = 0.007;
+  }
   const ssrOn = !!lighting.ssr?.enabled;
   const ssaoOn = !!ssaoPass?.enabled;
-  if (!graphics.post && !graphics.aa && !ssrOn && !ssaoOn) renderer.render(scene, camera);
+  if (!graphics.post && !graphics.aa && !ssrOn && !ssaoOn && !bokehPass.enabled) renderer.render(scene, camera);
   else composer.render();
 }
 function animate(now: number) {
@@ -1187,7 +1225,7 @@ stickEl?.addEventListener('pointercancel', endStick);
 
 void Promise.all([
   loadCybercab(),
-  new HDRLoader().loadAsync(`${import.meta.env.BASE_URL}textures/evening_road_01_puresky_1k.hdr`).then((hdri) => {
+  new HDRLoader().loadAsync(`${import.meta.env.BASE_URL}textures/kloofendal_48d_partly_cloudy_puresky_1k.hdr`).then((hdri) => {
     hdri.mapping = THREE.EquirectangularReflectionMapping;
     const env = pmrem.fromEquirectangular(hdri).texture;
     hdri.dispose();

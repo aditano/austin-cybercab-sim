@@ -35,7 +35,7 @@ The app runs in the browser on Windows, macOS, and Linux when the browser and gr
 - Use **W A S D** to walk along the avenue. Walking stays in a band beside the cab lane so the camera does not enter buildings.
 - Press **P** to show or hide the request phone, or use the on-screen **Phone** button. **F** toggles fullscreen. **P** is ignored while the cab is moving; the phone returns at arrival.
 - Use the top-right graphics button to open Low, Medium, High, Ultra, or Auto. Auto is the default: it picks a preset from this device, then eases up or down from measured frame time. Touch screens and software renderers stay on Low. Low uses lighter street models (Kenney props, fewer cars and people). High and Ultra swap nearby furniture for Poly Haven scans, cascade shadows, and reflection probes; Ultra can add screen-space reflections. Your choice is saved in this browser.
-- On the phone, pick a destination. Places outside the approximated service area disable Confirm. Confirm a ride, match the violet Megalamp and plate, and choose **Get in** when the cab has stopped. **Cancel ride** is available at the curb as well as during dispatch.
+- On the phone, pick a destination. Places outside the approximated service area disable Confirm. Confirm a ride, match the violet Megalamp and plate, and choose **Open doors** when the cab has stopped. **Cancel ride** is available at the curb as well as during dispatch.
 - In the cabin, choose **Fasten seatbelt**, then **Start Ride** after the doors close. During the ride, adjust the cabin temperature, toggle the generated ambient tone, or pause and resume the trip. Refreshing keeps the in-progress trip in this tab.
 - At the destination, exit and choose **Take another ride** to repeat the experience.
 
