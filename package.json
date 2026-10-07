@@ -11,7 +11,6 @@
     "test": "node --experimental-strip-types --test tests/*.test.mjs"
   },
   "dependencies": {
-    "3d-tiles-renderer": "^0.5.3",
     "three": "^0.180.0"
   },
   "devDependencies": {

@@ -14,7 +14,6 @@ import { loadCybercab, type Cybercab } from './vehicle';
 import { createCityLife } from './life';
 import { createStreetAssets } from './assets';
 import { createLighting } from './lighting';
-import { createAustinTiles, googleMapsApiKey, type AustinTiles } from './tiles';
 import {
   APPROACH_RUNWAY, AUSTIN_ROBOTAXI_GEOFENCE, CAPITOL, CONGRESS_ROUTE, CURB_PULL, DROPOFF, GEOFENCE_NOTE, MEGALAMP,
   PICKUP, ROAD_Y, STOP_INSET, VEHICLE_LABEL, VEHICLE_PLATE, measurePath, pointInRing, project, samplePath,
@@ -39,7 +38,7 @@ app.innerHTML = `<canvas id="scene"></canvas><div class="vignette"></div>
   <label class="gfx-toggle"><input type="checkbox" data-toggle="shadows"> Shadows</label>
   <label class="gfx-toggle"><input type="checkbox" data-toggle="aa"> Anti-aliasing</label>
   <label class="gfx-toggle"><input type="checkbox" data-toggle="post"> Post-process</label>
-  <p class="gfx-note">Auto picks a preset from this device, then eases up or down from measured frame time. Low uses the OSM fallback city. Medium and up prefer Google Photorealistic 3D Tiles when a key is set.</p>
+  <p class="gfx-note">Auto picks a preset from this device, then eases up or down from measured frame time. Low uses lighter street models.</p>
 </div>
 <aside class="chapter"><span class="eyebrow">CONGRESS AVENUE · AUSTIN</span><h1>Robotaxi<br>on Congress.</h1><p>Unofficial fan recreation.<br>Match the Megalamp, buckle up, then Start Ride.</p><div class="chapter-line"></div><span class="small-label">01 / CONFIRM YOUR RIDE</span></aside>
 <div class="location"><span class="location-dot">⌖</span><div><b id="location-name">Congress & 2nd</b><span id="location-detail">DOWNTOWN · CAPITOL NORTH · LAKE SOUTH</span></div></div>
@@ -47,7 +46,7 @@ app.innerHTML = `<canvas id="scene"></canvas><div class="vignette"></div>
 <aside id="phone" class="phone"><div id="phone-map" class="phone-map"></div><div class="phone-top"><b class="js-clock">6:42</b><div class="island"></div><span>5G</span></div><p class="fan-strip">UNOFFICIAL FAN SIM · NOT AFFILIATED WITH TESLA</p><div class="sheet"><div class="sheet-handle"></div><div class="app-bar"><span class="avatar" aria-hidden="true"></span><div class="app-title"><b>ROBOTAXI</b><span class="fan-chip">FAN SIM</span></div><button id="alerts" type="button" class="bell" aria-label="Alerts"></button></div><div id="phone-body"></div><div id="phone-actions"></div></div><div class="home-bar"></div></aside>
 <section id="cabin" class="cabin-panel" hidden></section>
 <div id="toast" role="status"></div>
-<footer><div class="controls"><span><kbd>DRAG</kbd> Look</span><span><kbd>W A S D</kbd> Walk</span><span><kbd>C</kbd> Camera</span><span><kbd>P</kbd> Phone</span><span><kbd>F</kbd> Fullscreen</span></div><div class="concept">UNOFFICIAL FAN SIM · NOT AFFILIATED WITH TESLA <span>·</span> <a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap</a><span id="map-credit"></span><a href="./docs.html" target="_blank">Sources & accuracy ↗</a></div></footer>
+<footer><div class="controls"><span><kbd>DRAG</kbd> Look</span><span><kbd>W A S D</kbd> Walk</span><span><kbd>C</kbd> Camera</span><span><kbd>P</kbd> Phone</span><span><kbd>F</kbd> Fullscreen</span></div><div class="concept">UNOFFICIAL FAN SIM · NOT AFFILIATED WITH TESLA <span>·</span> <a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap</a><a href="./docs.html" target="_blank">Sources & accuracy ↗</a></div></footer>
 <div class="ride-progress"><div id="progress-fill"></div></div>
 <div id="stick" hidden aria-label="Walk joystick"><div id="nub"></div></div>
 <button id="show-phone" type="button" hidden>Phone</button>
@@ -116,40 +115,8 @@ scene.add(sun);
 scene.add(sun.target);
 
 const world = createWorld(scene, (text) => setBoot(text, text.startsWith('Building') ? 55 : 35));
-let tiles: AustinTiles | null = null;
-let tilesWanted = Boolean(googleMapsApiKey());
 let cab!: Cybercab;
 let cabMounted = false;
-
-function tilesEnabledFor(q: Quality): boolean {
-  return tilesWanted && !!tiles?.active && q !== 'low';
-}
-
-/** Prefer photoreal tiles only after they ground near Congress; otherwise keep OSM city. */
-function tilesReadyFor(q: Quality): boolean {
-  return tilesEnabledFor(q) && !!tiles?.ready;
-}
-
-function syncCitySource(q: Quality) {
-  const streamTiles = tilesEnabledFor(q);
-  const preferTiles = tilesReadyFor(q);
-  if (tiles) tiles.setEnabled(streamTiles);
-  // Keep extruded OSM until tiles prove they sit under the avenue.
-  world.city.visible = !preferTiles;
-  pickupPad.visible = !preferTiles;
-  padGlow.visible = !preferTiles;
-  const credit = document.getElementById('map-credit');
-  if (credit) {
-    credit.textContent = streamTiles && tiles
-      ? ` · ${tiles.attributions.slice(0, 2).join(' · ')}`
-      : '';
-  }
-}
-
-function groundAt(x: number, z: number, fallback = ROAD_Y): number {
-  if (!tilesReadyFor(quality) || !tiles) return fallback;
-  return tiles.groundY(x, z, fallback);
-}
 
 const laneOffset = new THREE.Vector3(4.7, 0, 1.5);
 const centerline = CONGRESS_ROUTE.map(([lon, lat]) => project(lon, lat).add(laneOffset));
@@ -184,11 +151,8 @@ scene.add(padGlow);
 const life = createCityLife(scene, route, cumulative, routeLength);
 
 async function restyleWorld() {
-  syncCitySource(quality);
-  // When photoreal tiles carry the street, keep NPCs sparse so they clip less.
-  const streetQuality: Quality = tilesReadyFor(quality) ? 'low' : quality;
-  const parked = world.dress(assets, streetQuality, { x: walk.x, z: walk.z });
-  life.populate(assets, streetQuality);
+  const parked = world.dress(assets, quality, { x: walk.x, z: walk.z });
+  life.populate(assets, quality);
   lighting.hookObject(scene);
   const picks = [...life.objects(), ...parked];
   if (cabMounted) picks.unshift(cab.group);
@@ -818,7 +782,6 @@ function applyQuality(next: Quality, announce = true, fromUser = false) {
   }
   quality = next;
   graphics = graphicsFor(quality, graphicsOverrides);
-  syncCitySource(quality);
   const ratio = pixelRatioFor(devicePixelRatio, quality, { software: softwareGl, coarse: coarsePointer }, graphics.pixelScale);
   renderer.setPixelRatio(ratio);
   renderer.setSize(innerWidth, innerHeight);
@@ -928,13 +891,13 @@ function applyWalk(dt: number) {
   walkMove.set(ix, 0, iz);
   if (walkMove.lengthSq() > 1) walkMove.setLength(1);
   if (walkMove.lengthSq() < 0.0004) {
-    walk.y = groundAt(walk.x, walk.z, ROAD_Y) + 1.62;
+    walk.y = ROAD_Y + 1.62;
     return;
   }
   walkMove.applyAxisAngle(upAxis, lookYaw).multiplyScalar(dt * 4.4);
   walk.add(walkMove);
   constrainWalk();
-  walk.y = groundAt(walk.x, walk.z, ROAD_Y) + 1.62;
+  walk.y = ROAD_Y + 1.62;
 }
 
 let holdCam = false;
@@ -1002,7 +965,7 @@ function placeCab(d: number, curb = 0) {
   const p = sample(THREE.MathUtils.clamp(d, 0.4, routeLength - 0.4));
   cab.group.position.copy(p.position);
   if (curb) cab.group.position.add(curbShift(d, curb));
-  cab.group.position.y = groundAt(cab.group.position.x, cab.group.position.z, ROAD_Y);
+  cab.group.position.y = ROAD_Y;
   cab.group.rotation.y = p.heading;
   appliedCurb = curb;
 }
@@ -1012,10 +975,9 @@ function update(dt: number) {
   const walking = keys.has('w') || keys.has('a') || keys.has('s') || keys.has('d') || stickX * stickX + stickY * stickY > 0.04;
   if (walking && cam === 'chase' && phase !== 'ride' && phase !== 'boarded' && phase !== 'arrived') {
     walk.copy(camera.position);
-    walk.y = groundAt(walk.x, walk.z, ROAD_Y) + 1.62;
+    walk.y = ROAD_Y + 1.62;
     cam = 'walk';
   }
-  if (tilesEnabledFor(quality) && tiles) tiles.update(camera, renderer);
   const traffic = life.update(dt, distance, speedMps);
   if (phase === 'explore') {
     placeCab(stageDist, 0);
@@ -1279,33 +1241,14 @@ void Promise.all([
   }).catch(() => undefined),
   world.ready,
   assets.ready,
-  tilesWanted
-    ? createAustinTiles(scene, camera, renderer, {
-      onStatus: (text) => setBoot(text, 48),
-      onAttribution: () => syncCitySource(quality),
-    }).catch((err) => {
-      console.warn('[tiles] init failed', err);
-      return null;
-    })
-    : Promise.resolve(null),
-]).then(async ([loaded, _hdri, _world, _assets, austinTiles]) => {
-  tiles = austinTiles;
-  if (tiles?.error) {
-    toast('Photoreal map unavailable — using the OSM city.');
-    tilesWanted = false;
-  } else if (tiles) {
-    setBoot('Photoreal Austin ready', 70);
-  } else if (tilesWanted) {
-    toast('Add VITE_GOOGLE_MAPS_API_KEY for Google 3D Tiles.');
-  }
+]).then(async ([loaded]) => {
   setBoot('Dressing the avenue', 88);
   await restyleWorld();
   setBoot('Placing the Cybercab', 92);
   mountCab(loaded);
   await restyleWorld();
-  // Re-ground after tiles have a chance to stream near Congress.
   placeCab(distance, phase === 'pickup' || phase === 'boarded' || phase === 'arrived' ? CURB_PULL : 0);
-  walk.y = groundAt(walk.x, walk.z, ROAD_Y) + 1.62;
+  walk.y = ROAD_Y + 1.62;
   renderFrame();
   hideBoot();
 }).catch((error) => {

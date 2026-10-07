@@ -29,10 +29,6 @@ jobs:
           node-version: 22
           cache: npm
       - name: Install and build
-        env:
-          # Optional: set repository secret VITE_GOOGLE_MAPS_API_KEY for Photorealistic 3D Tiles.
-          # Without it the Pages build uses the OSM extruded fallback city.
-          VITE_GOOGLE_MAPS_API_KEY: ${{ secrets.VITE_GOOGLE_MAPS_API_KEY }}
         run: npm ci && npm run build
       - name: Setup Pages
         uses: actions/configure-pages@v5

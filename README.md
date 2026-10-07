@@ -30,10 +30,6 @@ npm run preview
 
 The app runs in the browser on Windows, macOS, and Linux when the browser and graphics hardware support WebGL 2. This repository does not provide native desktop binaries. Google Fonts are requested online for DM Sans and Manrope; system sans-serif fallbacks keep the interface usable if those fonts cannot be reached.
 
-### Google Photorealistic 3D Tiles (optional)
-
-Medium and higher presets prefer [Google Photorealistic 3D Tiles](https://developers.google.com/maps/documentation/tile/3d-tiles) when `VITE_GOOGLE_MAPS_API_KEY` is set (see [`.env.example`](.env.example)). Copy it to `.env.local` for local work. Restrict the key to the Map Tiles API and your HTTP referrers. Low quality and missing/failed keys fall back to the bundled OpenStreetMap extruded city. Tile imagery requires Google attribution in the UI.
-
 ## Controls and ride flow
 
 - A loading screen stays up while the map, city, and vehicle come in.
