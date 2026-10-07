@@ -1,8 +1,10 @@
 # Austin Cybercab Experience
 
-An independent, browser-based Three.js concept simulator set in downtown Austin. Explore a procedural city scene, request a simulated Cybercab, board it, and ride a short stretch of Congress Avenue from 2nd Street to 7th Street.
+**Unofficial fan sim — not affiliated with Tesla.**
 
-This is an interactive visual concept, not a Tesla product, a live Robotaxi client, a real booking, or an autonomous-driving system. It makes no live claims about Tesla fares, wait times, availability, service boundaries, or assigned vehicles. See [Sources & accuracy](public/docs.html) for the source notes and fuller limitations.
+A browser-based Three.js recreation of a short Austin Robotaxi-style ride on Congress Avenue (2nd Street to 7th Street). Explore the street, request a simulated Cybercab in a fan Robotaxi phone UI, match the Megalamp, buckle up, and Start Ride.
+
+This is not a Tesla product, a live Robotaxi client, a real booking, or an autonomous-driving system. It makes no live claims about Tesla fares, wait times, availability, service boundaries, or assigned vehicles. See [Sources & accuracy](public/docs.html) for the source notes and fuller limitations.
 
 ## Live site
 
@@ -26,7 +28,11 @@ npm run build
 npm run preview
 ```
 
-The app runs in the browser on Windows, macOS, and Linux when the browser and graphics hardware support WebGL 2. This repository does not provide native desktop binaries. Google Fonts are requested online for DM Sans and Manrope; system sans-serif fallbacks keep the interface usable if those fonts cannot be reached. Map data is bundled, so it does not require a map API at runtime.
+The app runs in the browser on Windows, macOS, and Linux when the browser and graphics hardware support WebGL 2. This repository does not provide native desktop binaries. Google Fonts are requested online for DM Sans and Manrope; system sans-serif fallbacks keep the interface usable if those fonts cannot be reached.
+
+### Google Photorealistic 3D Tiles (optional)
+
+Medium and higher presets prefer [Google Photorealistic 3D Tiles](https://developers.google.com/maps/documentation/tile/3d-tiles) when `VITE_GOOGLE_MAPS_API_KEY` is set (see [`.env.example`](.env.example)). Copy it to `.env.local` for local work. Restrict the key to the Map Tiles API and your HTTP referrers. Low quality and missing/failed keys fall back to the bundled OpenStreetMap extruded city. Tile imagery requires Google attribution in the UI.
 
 ## Controls and ride flow
 

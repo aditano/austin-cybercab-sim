@@ -32,7 +32,7 @@ Published dimensions: about 1,754 mm width, 1,408 mm height, and 144 mm ground c
 
 ## Visual target
 
-A publicly posted high-fidelity teleoperation / city-drive clip (chase camera, reflective paint, dense parked traffic, HUD speedometer) informed lighting, materials, chase camera, and traffic density. This remains a browser Three.js reconstruction with PBR materials, environment reflections, optional SSAO, bloom, and SMAA — not Unreal Engine or photogrammetry.
+A publicly posted high-fidelity teleoperation / city-drive clip (chase camera, reflective paint, dense parked traffic, HUD speedometer) informed lighting, materials, chase camera, and traffic density. This remains a browser Three.js reconstruction. When `VITE_GOOGLE_MAPS_API_KEY` is set, Medium+ presets stream Google Photorealistic 3D Tiles for downtown Austin (with required attribution); otherwise the scene uses the bundled OSM extruded city. Optional SSAO, bloom, and SMAA still apply — this is not Unreal Engine.
 
 The default graphics mode is Auto. It scores the GPU, memory, and pointer type, then adapts from measured frame time with hysteresis. Manual Low / Medium / High / Ultra persist in localStorage. Software GL stays on Low. Simulation steps catch up to about a quarter-second per frame so a slow paint does not freeze the cab a block away.
 
