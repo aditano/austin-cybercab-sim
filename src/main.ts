@@ -18,7 +18,7 @@ import {
 } from './geo';
 import {
   DESTINATIONS, GRAPHICS_KEY, QUALITY_LABEL, adaptQuality, blockedSpeed, doorTarget, showContactDisc,
-  emptyAdaptState, graphicsFor, parseGraphicsStore, parseSnapshot, pixelRatioFor, resolvedQuality,
+  emptyAdaptState, forcedQuality, graphicsFor, parseGraphicsStore, parseSnapshot, pixelRatioFor, resolvedQuality,
   stepDoor, togglePhone, type GraphicsToggles, type Quality, type QualityMode, type RideSnapshot,
 } from './logic';
 import './style.css';
@@ -160,14 +160,16 @@ const gl = renderer.getContext();
 const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
 const gpu = debugInfo ? String(gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL) || '') : '';
 const softwareGl = /swiftshader|llvmpipe|softpipe|microsoft basic render/i.test(gpu);
-if (softwareGl) {
+const forcedPreset = forcedQuality(window.location.search);
+const lockSoftware = softwareGl && !forcedPreset;
+if (lockSoftware) {
   renderer.shadowMap.enabled = false;
   renderer.setPixelRatio(1);
 }
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
-const ssaoPass = softwareGl ? null : new SSAOPass(scene, camera, innerWidth, innerHeight, 8);
+const ssaoPass = lockSoftware ? null : new SSAOPass(scene, camera, innerWidth, innerHeight, 8);
 if (ssaoPass) {
   ssaoPass.kernelRadius = 0.85;
   ssaoPass.minDistance = 0.00001;
@@ -175,14 +177,14 @@ if (ssaoPass) {
   composer.addPass(ssaoPass);
 }
 if (ssaoPass) ssaoPass.enabled = false;
-const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), softwareGl ? 0.04 : 0.08, 0.32, 0.96);
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), lockSoftware ? 0.04 : 0.08, 0.32, 0.96);
 composer.addPass(bloomPass);
 const smaaPass = new SMAAPass();
-smaaPass.enabled = !softwareGl;
+smaaPass.enabled = !lockSoftware;
 composer.addPass(smaaPass);
 composer.addPass(new OutputPass());
 
-const lighting = createLighting(renderer, scene, camera, sun, composer, sunOffset);
+const lighting = createLighting(renderer, scene, camera, sun, composer, sunOffset, sky);
 const assets = createStreetAssets();
 
 let phase: Phase = 'explore';
@@ -216,9 +218,9 @@ const hardware = {
   height: innerHeight,
   dpr: devicePixelRatio,
 };
-let qualityMode: QualityMode = storedGraphics?.mode ?? 'auto';
+let qualityMode: QualityMode = forcedPreset ?? storedGraphics?.mode ?? 'auto';
 let graphicsOverrides: Partial<GraphicsToggles> | undefined = storedGraphics?.overrides;
-let quality: Quality = softwareGl ? 'low' : resolvedQuality(qualityMode, hardware);
+let quality: Quality = forcedPreset ?? (softwareGl ? 'low' : resolvedQuality(qualityMode, hardware));
 let graphics = graphicsFor(quality, graphicsOverrides);
 let adaptState = emptyAdaptState();
 let stickX = 0;
@@ -380,7 +382,7 @@ function renderUI() {
   if (phase === 'dispatch') body.innerHTML = `<h2>On the way.</h2><p class="phone-sub">Match the front light bar and the plate before you get in.</p>${map}
     <p class="vehicle-kicker">${VEHICLE_LABEL}</p>${matchCard()}
     <button class="secondary" id="cancel" type="button">Cancel request</button>${walkBtn}`;
-  if (phase === 'pickup') body.innerHTML = `<h2>Your Cybercab has arrived.</h2><p class="phone-sub">At the curb. Hazards are on and the front bar glows teal. Confirm the plate against the app.</p>${map}
+  if (phase === 'pickup') body.innerHTML = `<h2>Your Cybercab has arrived.</h2><p class="phone-sub">At the curb. Hazards are on and the front bar shows the violet match color. Confirm the plate against the app.</p>${map}
     <p class="arrive-distance">At the east curb</p>${matchCard()}
     <button class="primary" id="enter" type="button">Enter <span>→</span></button>
     <button class="secondary" id="cancel" type="button">Cancel ride</button>${walkBtn}`;
@@ -624,7 +626,7 @@ function syncGfxMenu() {
     button.classList.toggle('on', button.dataset.mode === qualityMode);
   });
   const current = document.getElementById('gfx-current');
-  if (current) current.textContent = softwareGl ? 'Software graphics stay on Low.' : `Preset in use: ${gfxLabel()}`;
+  if (current) current.textContent = lockSoftware ? 'Software graphics stay on Low.' : `Preset in use: ${gfxLabel()}`;
   const shadows = menu.querySelector<HTMLInputElement>('[data-toggle="shadows"]');
   const aa = menu.querySelector<HTMLInputElement>('[data-toggle="aa"]');
   const post = menu.querySelector<HTMLInputElement>('[data-toggle="post"]');
@@ -634,7 +636,7 @@ function syncGfxMenu() {
 }
 
 function applyQuality(next: Quality, announce = true, fromUser = false) {
-  if (softwareGl && next !== 'low') {
+  if (lockSoftware && next !== 'low') {
     if (announce) toast('Software graphics stay on Low.');
     next = 'low';
   }
@@ -646,13 +648,14 @@ function applyQuality(next: Quality, announce = true, fromUser = false) {
   composer.setPixelRatio(ratio);
   composer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = graphics.shadows && graphics.shadowSize > 0;
-  lighting.apply(graphics, quality, softwareGl);
+  lighting.apply(graphics, quality, lockSoftware);
   lighting.hookObject(scene);
   if (ssaoPass) ssaoPass.enabled = graphics.post && quality !== 'low' && quality !== 'medium' && !coarsePointer;
   bloomPass.threshold = 0.96;
   bloomPass.strength = !graphics.post ? 0.04 : quality === 'ultra' ? 0.16 : quality === 'high' ? 0.12 : 0.08;
+  bloomPass.enabled = true;
   bloomPass.radius = quality === 'ultra' ? 0.42 : 0.32;
-  smaaPass.enabled = graphics.aa && !coarsePointer && !softwareGl;
+  smaaPass.enabled = graphics.aa && !coarsePointer && !lockSoftware;
   scene.environmentIntensity = quality === 'ultra' ? 1.25 : quality === 'low' ? 0.9 : 1.15;
   if (cabMounted) cab.setContactDisc(showContactDisc(graphics.shadows));
   document.querySelector('#settings')?.setAttribute('aria-label', `${gfxLabel()} graphics. Activate to open settings.`);
@@ -674,7 +677,7 @@ gfxMenu?.querySelectorAll<HTMLButtonElement>('[data-mode]').forEach((button) => 
     if (mode !== 'auto' && mode !== 'low' && mode !== 'medium' && mode !== 'high' && mode !== 'ultra') return;
     qualityMode = mode;
     adaptState = emptyAdaptState();
-    applyQuality(softwareGl ? 'low' : resolvedQuality(qualityMode, hardware), true, true);
+    applyQuality(lockSoftware ? 'low' : resolvedQuality(qualityMode, hardware), true, true);
     persistGraphics();
     void restyleWorld();
   });
@@ -988,6 +991,8 @@ function mountCab(loaded: Cybercab) {
       wheelSpin: Number(cab.wheelSpin().toFixed(4)),
       wheelSteer: Number(cab.wheelSteer().toFixed(4)),
       speedMph: Math.round(speedMps * 2.23694),
+      quality, qualityMode, reflections: graphics.reflections, cascades: graphics.cascades,
+      forcedPreset: forcedPreset ?? null,
     });
     },
     advanceTime: (ms: number) => {

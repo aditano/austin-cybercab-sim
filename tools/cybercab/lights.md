@@ -43,12 +43,44 @@ Timestamps below are given as **source time** (position in the original YouTube 
 
 ## How this maps onto the model / glb
 
+Checked again on 7 October 2026 against the rider guide and Austin sightings. See the decision notes below.
+
 | Animation | Based on | Notes |
 |---|---|---|
-| `lights_wake` | **inferred** | Centre-out sweep over ~0.9 s (front, then rear 3 frames later) plus one brake-overlay pulse. The real wake sequence was not observed. |
-| `turn_left`, `turn_right` | observed timing (rear, hazard) | Outer 3 of 6 segments per side blink: 10 frames on, 6 off at 24 fps (0.42 s / 0.25 s), 3 cycles. Rear overlay is red (observed); front overlay is amber (**inferred**, not seen). |
-| `hazard` | observed | Both sides of the above together. |
-| `brake` | **inferred** | Full-width brighter red overlay on the rear bar. |
-| `pickup` | observed | Front bar overlaid teal, steady, 2.5 s. |
+| `lights_wake` | still inferred | Centre-out sweep over ~0.9 s (front, then rear 3 frames later) plus one brake-overlay pulse. No wake sequence was found in the rider guide or the 2026 Austin writeups. Kept. |
+| `turn_left`, `turn_right` | rear timing observed; front color corrected | Outer 3 of 6 segments per side blink: 10 frames on, 6 off at 24 fps (0.42 s / 0.25 s), 3 cycles. Rear overlay stays red. Front overlay is the front bar's own color (white, or the Megalamp color), not amber. |
+| `hazard` | observed | Both sides of the above together, when parked for pickup or drop-off. |
+| `brake` | still inferred | Full-width brighter red overlay on the rear bar. The guide names brake lights, but no still or clip showed a separate pattern. Kept. |
+| `pickup` | corrected | The glTF clip still shows one aqua overlay, which is one real Megalamp color. The sim paints the app-assigned color on the base front bar instead of forcing teal. |
 | `door_open` | observed motion | 40 frames (1.67 s), close to the ~1.5 s stroke measured. |
 | `wheel_spin` | n/a | One turn per 25 frames, loopable. |
+
+## Decision notes (7 October 2026)
+
+### Front bar color is the app color, including at the curb
+
+Tesla's Cybercab rider guide, "Ride with Cybercab", says: during pickup the rear lightbar illuminates red and the front lightbar changes colors, and the rider should consult the Robotaxi app for the color assigned to that ride. When the car parks, the hazard lights flash. The same page says drop-off parks and flashes hazards.
+
+https://www.tesla.com/robotaxi/riderguides/cybercab/en_us/GUID-B2926138-4595-4C53-8C85-54EEED4CB7AF.html
+
+The overview names headlights, brake lights, and the signature front and rear lightbars as separate things, and says the lightbars illuminate and change color during pickup and flash hazards when parked for pickup and drop-off.
+
+https://www.tesla.com/robotaxi/riderguides/cybercab/en_us/GUID-669E83C2-E7DE-40F4-9DBD-C9A32E7F6DFF.html
+
+Austin footage before the September 2026 launch showed the front bar in more than one steady color while cars were doing pickups, including orange, purple, and aqua, and white in ordinary driving. That matches one assigned color per ride, not a dedicated amber turn lamp and not a curb-only teal state.
+
+https://www.teslaoracle.com/2026/08/27/cybercabs-spotted-colored-front-light-bars-video-know-why-tesla-integrated-this-feature/
+
+The aqua bar in Future Has Arrived (0:29) is one of those colors. This sim's app color is violet (`#c24bff`), so the car keeps violet from dispatch through boarding. The teal overlay nodes and the `pickup` clip stay in the glTF as that aqua example. The sim does not turn them on for this ride.
+
+### Front amber turn signal: not supported
+
+No clip in the set shows an amber front segment. Orange and amber whole-bar glows in the Austin sightings above are Megalamp colors. The measured blink is the We, Robot rear hazard: outer ends, red, about 0.42 s on and 0.25 s off. The sim now blinks the outer three segments of each bar in that bar's own color. The running bar under those segments dims while the overlay is on, which is how a lit bar can still flash.
+
+### Brake: kept
+
+The overview lists brake lights separately from the signature bars, so a brake state exists. None of the reviewed clips, and none of the stills checked with this pass (Jurvetson rear, July 2025 rear three-quarter, San Francisco side, Tesla_Cybercab_002), showed a second lamp or a clear intensity step. A social post mentioned a high strip above the rear bar; that was not visible on those stills, so it was not added. The sim still brightens the full-width rear bar while slowing hard.
+
+### Wake sweep: kept
+
+The rider guide does not describe a startup animation. The clips still cut in with the bars already lit. The centre-out `lights_wake` sweep, with one brake pulse at the end, stays as an inference.

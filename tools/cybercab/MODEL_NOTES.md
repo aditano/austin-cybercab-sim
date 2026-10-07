@@ -17,7 +17,7 @@ Every segment is its own mesh node, with its origin at the segment centroid. The
 - `lamp-rear-R1..R6`, `lamp-rear-L1..L6`: red tail bar, material `lamp-rear`. On at rest.
 - Overlays sit a hair proud of the base bar and are **off at rest (node scale 0.001)**. Animations scale them to 1:
   - `lamp-rear-brake-R1..L6`: brighter red, material `lamp-brake`.
-  - `lamp-front-turn-R4..R6 / L4..L6`: amber, material `lamp-turn-amber`.
+  - `lamp-front-turn-R4..R6 / L4..L6`: white, material `lamp-turn-front`. The sim tints these to the current front-bar color.
   - `lamp-rear-turn-R4..R6 / L4..L6`: red, material `lamp-turn-rear`.
   - `lamp-front-teal-R1..L6`: teal pickup state, material `lamp-front-teal`.
 - In the sim you can ignore the clips and just set `node.scale` (or `visible`) per segment. Or clone the segment materials and drive `emissiveIntensity`.

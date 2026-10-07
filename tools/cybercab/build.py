@@ -77,7 +77,7 @@ def materials():
     M['lamp_r'] = mat('lamp-rear', '#FF1A10', rough=0.25, emit='#FF1A10', emit_str=28.0)
     M['lamp_r_off'] = mat('lamp-rear-lens', '#5A0A08', rough=0.15, coat=0.6, emit='#FF1A10', emit_str=1.5)
     M['amber'] = mat('lamp-amber', '#FF8A10', rough=0.25, emit='#FF8000', emit_str=2.0)
-    M['turn'] = mat('lamp-turn-amber', '#FF8A10', rough=0.2, emit='#FF7A00', emit_str=30.0)
+    M['turn'] = mat('lamp-turn-front', '#FFFFFF', rough=0.2, emit='#FFFFFF', emit_str=30.0)
     M['turn_r'] = mat('lamp-turn-rear', '#FF2A18', rough=0.2, emit='#FF2A18', emit_str=60.0)
     M['brake'] = mat('lamp-brake', '#FF1A10', rough=0.2, emit='#FF1208', emit_str=70.0)
     M['teal'] = mat('lamp-front-teal', '#30E0B0', rough=0.2, emit='#2FE3B4', emit_str=22.0)
@@ -112,6 +112,15 @@ def mesh_from_bm(name, bm, mats=None, smooth=True):
         for p in me.polygons:
             p.use_smooth = True
     return ob
+
+
+def shade_creases(ob, degrees=26):
+    """Split smooth normals on the belt, rail, and rocker so the haunch stays a hard crease."""
+    m = ob.modifiers.new('creases', 'EDGE_SPLIT')
+    m.split_angle = math.radians(degrees)
+    m.use_edge_angle = True
+    m.use_edge_sharp = False
+    apply_mods(ob)
 
 
 def apply_mods(ob):
@@ -346,8 +355,18 @@ def door_outline():
 def side_glass_outline():
     """Door glass + quarter glass as one outline (the door cut splits them)."""
     pts = []
-    # bottom: quarter-window sill then door sill
-    pts += [(-1.42, 1.080), (-1.20, 1.084), (-1.00, 1.078), (-0.80, 1.062), (-0.56, 1.030), (-0.535, 1.008), (-0.50, 0.995)]
+    # Quarter sill rises toward the tail and meets the door sill at the same slope.
+    # The old polyline kinked near y=-0.54 (slope jumped from about -0.13 to -0.88).
+    y_rear, z_rear = -1.42, 1.074
+    y_join, z_join = -0.50, 0.995
+    door_slope = (0.937 - 0.995) / 1.30
+    span = y_rear - y_join
+    bow = (z_rear - z_join - door_slope * span) / (span * span)
+    steps = 10
+    for i in range(steps + 1):
+        y = y_rear + (y_join - y_rear) * i / steps
+        dy = y - y_join
+        pts.append((y, z_join + door_slope * dy + bow * dy * dy))
     for i in range(1, 9):
         y = -0.50 + (0.80 + 0.50) * i / 8
         pts.append((y, 0.995 + (0.937 - 0.995) * (y + 0.50) / 1.30))
@@ -704,7 +723,30 @@ def main():
         bm.to_mesh(g.data); bm.free()
         log('glass skin', g.name, len(g.data.polygons))
 
+    for shell in (body, door_r, door_l):
+        shade_creases(shell)
+    log('creases')
+
     # ---------------- lights
+    # The squarish tail plan reaches half width within a fraction of a millimetre,
+    # so the loft has almost no stations on the inner light-bar bands. Sample the
+    # existing loft wherever the half-width jumps, and hang the bars on that.
+    def densify_rows(src, dx=0.028):
+        out = [src[0]]
+        for row in src[1:]:
+            prev = out[-1]
+            gap = abs(max(abs(p[0]) for p in row) - max(abs(p[0]) for p in prev))
+            steps = int(math.floor(gap / dx))
+            for s in range(1, steps):
+                t = s / steps
+                out.append([
+                    (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t)
+                    for a, b in zip(prev, row)
+                ])
+            out.append(row)
+        return out
+
+    rows = densify_rows(rows)
     nst = len(rows)
     ys = [rows[i][0][1] for i in range(nst)]
     front_st = [i for i in range(nst) if rows[i][S.NV - 1][1] > 1.74]
@@ -892,7 +934,7 @@ def main():
     for ob in lights['rear_brake'].values():
         scale_track(ob, [(1, OFF), (2, 1.0), (36, 1.0), (37, OFF)], 'brake', 'CONSTANT')
 
-    # pickup: front bar turns teal (observed in Tesla footage at a rider pickup), steady then off
+    # pickup clip: one observed aqua Megalamp color on the front overlay. The sim paints the app color on the base bar.
     for (sname, k), ob in lights['front_teal'].items():
         scale_track(ob, [(1, OFF), (6, 1.0), (60, 1.0), (66, OFF), (72, OFF)], 'pickup')
 

@@ -280,6 +280,15 @@ export function resolvedQuality(mode: QualityMode, profile: HardwareProfile): Qu
   return mode === 'auto' ? autoQualityPreset(profile) : mode;
 }
 
+/** `?preset=high&force=1` renders that preset even when WebGL is SwiftShader. */
+export function forcedQuality(search: string): Quality | null {
+  const params = new URLSearchParams(search.startsWith('?') ? search.slice(1) : search);
+  if (params.get('force') !== '1') return null;
+  const preset = params.get('preset');
+  if (!preset || !isQuality(preset)) return null;
+  return preset;
+}
+
 export type StreetBudget = {
   movingCars: number;
   parked: number;
