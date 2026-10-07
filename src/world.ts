@@ -28,7 +28,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
   update(dt:number):void;
   ready: Promise<void>;
   city: THREE.Group;
-  dress(assets: StreetAssets, quality: Quality): THREE.Object3D[];
+  dress(assets: StreetAssets, quality: Quality, eye?: { x: number; z: number }): THREE.Object3D[];
 } {
   const root=new THREE.Group(); root.name='Austin · geographic city'; scene.add(root);
   const city=new THREE.Group(); root.add(city);
@@ -103,15 +103,18 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
   const stripe=new THREE.MeshStandardMaterial({color:0xb7ad98,roughness:0.88,metalness:0,envMapIntensity:0.04});
   const lane=new THREE.MeshStandardMaterial({color:0x6e6556,roughness:0.94,metalness:0,envMapIntensity:0.02});
   const gold=new THREE.MeshStandardMaterial({color:0x7a6840,roughness:0.9,metalness:0.02,envMapIntensity:0.04});
-  // Unlit so the sun and HDRI cannot lift the wear back up to the asphalt color.
-  const crackMat=new THREE.MeshBasicMaterial({color:0x141618,polygonOffset:true,polygonOffsetFactor:-6,polygonOffsetUnits:-4});
-  const patchMat=new THREE.MeshStandardMaterial({color:0x23282c,roughness:1,metalness:0,envMapIntensity:0,polygonOffset:true,polygonOffsetFactor:-4,polygonOffsetUnits:-2});
-  const tarMat=new THREE.MeshBasicMaterial({color:0x0c0e10,polygonOffset:true,polygonOffsetFactor:-8,polygonOffsetUnits:-6});
-  const lawn=new THREE.MeshStandardMaterial({color:0x4d643c,roughness:.94});
+  const lawn=new THREE.MeshStandardMaterial({color:0x3c552d,roughness:.94});
   const benchWood=new THREE.MeshStandardMaterial({map:barkDiff,color:0xc4b2a2,roughness:.88});
   const trunkMat=new THREE.MeshStandardMaterial({map:barkDiff,normalMap:barkNor,color:0xffffff,roughness:.86,normalScale:new THREE.Vector2(.8,.8)});
+  const leafMap=mapTexture('leaves_diff.jpg',true);
+  const leafAlpha=mapTexture('leaves_alpha.png',false);
+  leafMap.wrapS=leafMap.wrapT=THREE.ClampToEdgeWrapping;
+  leafAlpha.wrapS=leafAlpha.wrapT=THREE.ClampToEdgeWrapping;
+  // The atlas is yellow-green. This multiplier is darker than the raw atlas so the lit cards land near rgb(60,85,45).
   const oakLeafMat=new THREE.MeshStandardMaterial({
-    vertexColors:true,roughness:0.9,color:0xffffff,envMapIntensity:0.2,
+    map:leafMap, alphaMap:leafAlpha, alphaTest:0.42,
+    color:new THREE.Color(0.32, 0.4, 0.34),
+    roughness:0.92, metalness:0, side:THREE.DoubleSide, envMapIntensity:0.08,
   });
   const waterMaterial=new THREE.MeshPhysicalMaterial({color:0x2a656c,metalness:0.55,roughness:0.08,transparent:true,opacity:0.92,envMapIntensity:1.7,clearcoat:1,clearcoatRoughness:.12});
   function pbrMap(file:string, srgb:boolean) {
@@ -275,7 +278,6 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     }
   }
   const streetSpots:StreetSpot[]=[];
-  const wearSegs:{a:THREE.Vector2;b:THREE.Vector2;width:number;congress:boolean}[]=[];
   const dressed=new THREE.Group(); dressed.name='street-models';
   let junctions:THREE.Vector2[]=[];
   function nearJunction(p:THREE.Vector2,radius=15) {return junctions.some(j=>j.distanceToSquared(p)<radius*radius);}
@@ -288,7 +290,6 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     for(let i=1;i<pts.length;i++) {
       const a=pts[i-1],b=pts[i],len=a.distanceTo(b);if(len<0.2)continue;
       strip(parent,a,b,width+5,0.00,pavement);strip(parent,a,b,width,.10,walking?pavement:asphalt);
-      if(!walking) wearSegs.push({a:a.clone(),b:b.clone(),width,congress:/Congress Avenue/.test(f.name||'')});
       if(walking||service)continue;
       const direction=b.clone().sub(a).normalize(),normal=new THREE.Vector2(-direction.y,direction.x);
       for(let d=0.4;d<len;d+=Math.min(12,len)) {
@@ -308,13 +309,13 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
         const yaw=Math.atan2(-direction.y,direction.x);
         const seed=d+i*12;
         for(const side of sides) {
-          const spot=a.clone().addScaledVector(direction,d).addScaledVector(normal,side*(width*.5+3.8));
+          const spot=a.clone().addScaledVector(direction,d).addScaledVector(normal,side*(width*.5+5.2));
           if(nearJunction(spot,16)) continue;
           box(parent,spot.x,.09,spot.y,2.1,.16,2.1,lawn);
           streetSpots.push({kind:'tree',x:spot.x,z:spot.y,yaw,seed:seed+side*17});
           const hero=(spot.x-80)**2+(spot.y+20)**2<175*175;
           if(congress && hero && Math.floor(d/14)%2===0) {
-            const mid=a.clone().addScaledVector(direction,d+7).addScaledVector(normal,side*(width*.5+3.8));
+            const mid=a.clone().addScaledVector(direction,d+7).addScaledVector(normal,side*(width*.5+5.2));
             streetSpots.push({kind:'tree',x:mid.x,z:mid.y,yaw,seed:seed+40+side});
           }
         }
@@ -520,49 +521,9 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     const stem=new THREE.Mesh(new THREE.BoxGeometry(0.18,3.6,0.18), metal);
     stem.position.set(x,5.4,z); stem.castShadow=true; parent.add(stem);
   }
-  function placeWear(parent:THREE.Object3D) {
-    const hubs=[new THREE.Vector2(80,-20), new THREE.Vector2(165,-300)];
-    const near=(p:THREE.Vector2)=>hubs.some(h=>h.distanceToSquared(p)<160*160);
-    let cracks=0, patches=0, seams=0;
-    for(const seg of wearSegs) {
-      const len=seg.a.distanceTo(seg.b);
-      if(len<6) continue;
-      const dir=seg.b.clone().sub(seg.a).normalize();
-      const normal=new THREE.Vector2(-dir.y, dir.x);
-      const yaw=Math.atan2(dir.x, dir.y);
-      const hero=hubs.some(h=>h.distanceToSquared(seg.a)<90*90 || h.distanceToSquared(seg.b)<90*90);
-      const step=seg.congress?(hero?8:14):28;
-      for(let t=3;t<len-2;t+=step) {
-        const p=seg.a.clone().addScaledVector(dir,t);
-        if(!near(p)) continue;
-        const seed=Math.round(p.x*3+p.y);
-        if(seg.congress && seams<72) {
-          box(parent,p.x,0.2,p.y,seg.width*0.9,0.03,0.72,tarMat,yaw);
-          seams++;
-        }
-        if(patches<48 && seeded(seed)<0.7) {
-          const q=p.clone().addScaledVector(normal,(seeded(seed+2)-0.5)*seg.width*0.32);
-          box(parent,q.x,0.198,q.y,3.2+seeded(seed+3)*3.4,0.028,4.2+seeded(seed+4)*2.2,patchMat,yaw+(seeded(seed+5)-0.5)*0.4);
-          patches++;
-        }
-        if(cracks<80 && seeded(seed+1)<0.85) {
-          let c=p.clone().addScaledVector(normal,(seeded(seed+6)-0.5)*seg.width*0.34);
-          let turn=yaw+(seeded(seed+7)-0.5)*1.1;
-          for(let i=0;i<6;i++) {
-            const piece=1.1+seeded(seed+i*3)*1.8;
-            turn+= (seeded(seed+i*9)-0.5)*0.55;
-            box(parent,c.x,0.205,c.y,0.18,0.02,piece,crackMat,turn);
-            c=c.clone().add(new THREE.Vector2(Math.sin(turn), Math.cos(turn)).multiplyScalar(piece*0.7));
-          }
-          cracks++;
-        }
-      }
-    }
-  }
   function render(data:MapData) {
     city.clear();
     streetSpots.length=0;
-    wearSegs.length=0;
     awnings.length=0;
     shopSigns.length=0;
     dressed.clear();
@@ -597,7 +558,6 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       const x=-700+i*62,z=365+x*.15;
       box(city,x,.02,z,24,.08,6,lawn);
     }
-    placeWear(city);
     // Batch street furniture and markings: thousands of details, a handful of draws.
     const batches=new Map<THREE.Material,THREE.Mesh[]>();
     for(const child of [...city.children]) {
@@ -704,27 +664,21 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       bark.push(geo);
     }
     const crown: THREE.BufferGeometry[] = [];
-    for (let i = 0; i < 84; i++) {
+    for (let i = 0; i < 42; i++) {
       const ang = seeded(i * 19) * Math.PI * 2;
-      const rad = Math.pow(seeded(i * 7), 0.42) * 6.3;
-      const lift = Math.sqrt(Math.max(0, 1 - (rad / 6.7) ** 2));
-      const droop = Math.pow(rad / 6.3, 1.55) * 1.25;
-      const y = 2.65 + lift * 2.55 - droop + (seeded(i * 3) - 0.5) * 0.35;
-      const ico = new THREE.IcosahedronGeometry(0.48 + seeded(i * 11) * 0.92, 1);
-      ico.scale(1, 0.68 + seeded(i * 17) * 0.16, 1);
-      const color = new THREE.Color().setHSL(0.27 + seeded(i * 13) * 0.08, 0.4 + seeded(i * 5) * 0.12, 0.16 + lift * 0.22);
-      const count = ico.attributes.position.count;
-      const colors = new Float32Array(count * 3);
-      const pos = ico.attributes.position;
-      for (let v = 0; v < count; v++) {
-        const ny = pos.getY(v);
-        const shade = color.clone();
-        if (ny < 0) shade.multiplyScalar(0.55);
-        shade.toArray(colors, v * 3);
-      }
-      ico.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      ico.translate(Math.cos(ang) * rad, y, Math.sin(ang) * rad * 0.9);
-      crown.push(ico);
+      const rad = Math.pow(seeded(i * 7), 0.62) * 2.9;
+      const lift = Math.sqrt(Math.max(0, 1 - (rad / 3.7) ** 2));
+      const y = 3.55 + lift * 1.55 - Math.pow(rad / 2.9, 1.35) * 0.45;
+      const w = 1.35 + seeded(i * 3) * 1.15;
+      const h = 0.95 + seeded(i * 5) * 0.85;
+      const plane = new THREE.PlaneGeometry(w, h);
+      const uv = plane.attributes.uv;
+      const u0 = seeded(i * 11) * 0.42;
+      const v0 = seeded(i * 13) * 0.42;
+      for (let k = 0; k < uv.count; k++) uv.setXY(k, u0 + uv.getX(k) * 0.55, v0 + uv.getY(k) * 0.55);
+      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler((seeded(i * 17) - 0.5) * 0.85, ang + seeded(i * 23) * Math.PI, (seeded(i * 29) - 0.5) * 0.35, 'YXZ'));
+      plane.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(Math.cos(ang) * rad, y, Math.sin(ang) * rad * 0.9), q, new THREE.Vector3(1, 1, 1)));
+      crown.push(plane);
     }
     const barkGeo = mergeGeometries(bark);
     const crownGeo = mergeGeometries(crown);
@@ -744,7 +698,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     trunks.castShadow=quality!=='low'; trunks.receiveShadow=true; trunks.frustumCulled=false;
     leaves.castShadow=quality!=='low'; leaves.receiveShadow=false; leaves.frustumCulled=false;
     spots.forEach((spot,i)=>{
-      const s=0.86+seeded(spot.seed)*0.42;
+      const s=0.9+seeded(spot.seed)*0.16;
       dummy.position.set(spot.x,0,spot.z);
       dummy.rotation.set(0, spot.yaw + seeded(spot.seed+4)*0.6, 0);
       dummy.scale.set(s, s*(0.9+seeded(spot.seed+2)*0.18), s);
@@ -756,7 +710,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     leaves.instanceMatrix.needsUpdate=true;
     parent.add(trunks, leaves);
   }
-  function dress(assets: StreetAssets, quality: Quality): THREE.Object3D[] {
+  function dress(assets: StreetAssets, quality: Quality, eye?: { x: number; z: number }): THREE.Object3D[] {
     dressed.clear();
     const budget = streetBudget(quality);
     const paints = [0xe8e4dc, 0x2c3338, 0x8d3a32, 0x1e2428, 0xd7d3c8, 0x4d5960, 0x6b7180, 0xc9c3b6, 0xbf5700, 0xdfe3e0];
@@ -769,7 +723,10 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     const oakCap = quality === 'ultra' ? 70 : quality === 'high' ? 52 : quality === 'medium' ? 36 : 14;
     const oakRadius = quality === 'low' ? 110 : quality === 'medium' ? 240 : 320;
     const nearest = (spot: StreetSpot) => Math.min(spotDist(spot, south), spotDist(spot, downtown));
-    const oakTrees = trees.filter((spot) => keep(spot, oakRadius)).sort((a, b) => nearest(a) - nearest(b)).slice(0, oakCap);
+    // Keep crowns out of the walk camera. The opening eye is not the south hub.
+    const walkEye = new THREE.Vector2(eye?.x ?? 88.8, eye?.z ?? -54.5);
+    const clearOfCamera = (spot: StreetSpot) => (spot.x - walkEye.x) ** 2 + (spot.z - walkEye.y) ** 2 > 11 * 11;
+    const oakTrees = trees.filter((spot) => keep(spot, oakRadius) && clearOfCamera(spot)).sort((a, b) => nearest(a) - nearest(b)).slice(0, oakCap);
     placeOaks(dressed, oakTrees, quality);
     const instanceKinds: PropKind[] = ['lamp', 'planter', 'pole', 'cone', 'dumpster', 'signal'];
     for (const kind of instanceKinds) {

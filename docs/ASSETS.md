@@ -48,7 +48,7 @@ License: [CC0](https://polyhaven.com/license). No login.
 | `props/trash.glb` | Metal Trash Can | https://polyhaven.com/a/metal_trash_can |
 | `props/planter.glb` | Planter Box 01 | https://polyhaven.com/a/planter_box_01 |
 
-Jacaranda, island, pine, and fir photogrammetry trees from Poly Haven are 60–949 MB at 1K and were not bundled. Near the ride, street trees use the existing Poly Haven bark and leaf textures on card canopies. Farther trees stay Kenney cones.
+Poly Haven photogrammetry trees were measured again and still do not fit this page: island tree bins are 41–80 MB, fir and pine trees are 22–949 MB at 1K. Shrub scans are smaller and are not live oaks. Street trees use the Poly Haven bark and the Tree Small 02 leaf atlas on alpha-tested cards, tinted toward rgb(60, 85, 45). Kenney cone trees are not placed.
 
 | File | Asset | URL |
 | --- | --- | --- |
@@ -79,7 +79,9 @@ ambientCG CC0, 2K JPEG, color plus normal and roughness. Masonry walls sample th
 | `textures/facades/facade-c.jpg` | Facade007 (unused) | https://ambientcg.com/view?id=Facade007 |
 | `textures/facades/facade-d.jpg` | Facade014 (unused) | https://ambientcg.com/view?id=Facade014 |
 
-Street trees are instanced 3D live oaks: a trunk and limbs (bark texture) plus a solid crown of icosahedron clumps (`liveOakGeometry` in `src/world.ts`). Card canopies and Kenney cone trees are not placed. The leaf atlas stays on disk and is not wrapped onto the crown. The Poly Haven apartment facade, fire escape, and shrub scans are not placed on the sidewalk.
+Street trees are a trunk and limbs plus a crown of alpha-tested leaf cards (`liveOakGeometry` in `src/world.ts`). The cards use `textures/leaves_diff.jpg` and `textures/leaves_alpha.png` (Poly Haven Tree Small 02, CC0), tinted so the lit crown is near the photograph's green. Solid icosahedron clumps are not placed. Crowns within 11 m of the walk camera are not placed. The Poly Haven apartment facade, fire escape, and shrub scans are not placed on the sidewalk.
+
+The round 4 road wear was unlit black boxes. An ambientCG Asphalt Damage 001 decal (CC0) was tried and still read as a dark rectangle on the asphalt, so it is not shipped. The road is the asphalt texture and the worn lane paint, without overlay boxes.
 
 Kenney props that are instanced (the curved lamp on Medium, planters) have their node scale baked into the geometry first. Without that, the east-sidewalk lamp was a stretched column.
 
