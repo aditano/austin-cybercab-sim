@@ -38,7 +38,7 @@ Y-up, meters, nose toward −Z, ground at local y = 0. The mesh bounds are about
 - `door-hinge-r` and `door-hinge-l` sample the `door_open` quaternion clip. Only the curb side (+X) opens. The stroke is 1.5 s.
 - `wheel-spin-fr|fl|rr|rl` roll about local X with speed. `wheel-steer-fr|fl` steer about Y. Positive steer is a left turn.
 - The `lights` node holds six segments per side. Front white and rear red stay on. Brake, turn, and teal segments start at scale 0.001. The sim scales those nodes from ride state instead of playing the finite light clips.
-- Rear turn segments are the outer three. The sim hides the tail under them and tints the overlay amber so the blink reads in daylight.
+- Rear turn segments are the outer three and stay red. Front turn segments blink in the front bar's own color. The sim hides the running bar under a lit turn segment.
 - The Texas plate and the soft contact shadow are added in `src/vehicle.ts`. The glTF has no plate mesh.
 
 ## Rebuild

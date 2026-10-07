@@ -33,7 +33,8 @@ assert.ok(Math.abs(picked.vehicle[1] - 0.16) < 0.05, `cab not on the road (y=${p
 assert.ok(picked.door > 0.45, `curb door did not open (${picked.door})`);
 assert.equal(picked.lights.pickup, true);
 assert.equal(picked.lights.hazard, true);
-assert.ok(picked.lights.teal > 0.8, `pickup bar was not teal (${picked.lights.teal})`);
+assert.equal(picked.lights.megalamp, true);
+assert.equal(picked.lights.teal, 0);
 await page.screenshot({ path: 'output/validation/02-pickup.png', timeout: 15000 }).catch(() => {});
 await click('#enter');
 await advance(2000);

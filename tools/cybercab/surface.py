@@ -25,9 +25,9 @@ HW = WIDTH / 2.0
 
 # nose / tail plan rounding
 Y_NS = 1.56            # nose rounding starts here
-Y_TS = -1.93           # tail rounding starts here (short, blunt tail)
+Y_TS = -2.04           # tail rounding starts late: the haunch stays full width, then a short corner
 P_NOSE = 2.05
-P_TAIL = 4.0
+P_TAIL = 7.0           # plan-view corner tighter than the old round superellipse (was 4)
 
 
 def pchip(pts):
@@ -117,6 +117,16 @@ def end_factor(y):
     return 1.0
 
 
+def rear_shape(y):
+    """0 through the doors, 1 at the tail. The haunch crease fades in behind the cabin."""
+    if y >= -0.95:
+        return 0.0
+    if y <= -2.05:
+        return 1.0
+    u = (-0.95 - y) / (2.05 - 0.95)
+    return u * u * (3.0 - 2.0 * u)
+
+
 def section_ctrl(y):
     """8 control points (x, z) from bottom centre to top centre, before end rounding."""
     zt, zb = z_top(y), z_bot(y)
@@ -128,14 +138,24 @@ def section_ctrl(y):
     zk = z_rock(y)
     zw = min(z_wide(y), zs - 0.06)
     zw = max(zw, zk + 0.08)
+    tuck = rear_shape(y)
+    # Shoulder becomes the outer corner. The panel under it falls inward
+    # toward the bumper instead of ballooning past the belt line.
+    hs = hs + ((hw - 0.004) - hs) * tuck
+    hr = hr + (min(hs - 0.016, hr + 0.04) - hr) * tuck
+    # The panel under the belt pulls in so the haunch reads as a flat face
+    # with a ridge, rather than a barrel between the rocker and the deck.
+    hw_low = hw - 0.11 * tuck
+    crown = 0.22 * (1.0 - 0.82 * tuck)
+    mid_z = zt - (zt - zr) * crown if zr < zt else zt + (zr - zt) * 0.15
     p = [
         (0.0, zb),
-        (hw - 0.085, zb),
-        (hw - 0.012, zk),
-        (hw, zw),
+        (hw_low - 0.085, zb),
+        (hw_low - 0.012, zk),
+        (hw_low, zw),
         (hs, zs),
         (hr, zr),
-        (hr * 0.5, zt - (zt - zr) * 0.22 if zr < zt else zt + (zr - zt) * 0.15),
+        (hr * 0.46, mid_z),
         (0.0, zt),
     ]
     return p
@@ -171,10 +191,12 @@ def _cr(p0, p1, p2, p3, t, alpha=0.5):
     return lerp(b1, b2, t1, t2)
 
 
-# crease sharpness (0 smooth .. 1 hard corner) at control points 4 (shoulder) and 5 (rail)
+# crease sharpness (0 smooth .. 1 hard corner) at control points 3 (low haunch), 4 (shoulder), 5 (rail)
 crease5 = pchip([(-2.16, 1.0), (-1.0, 1.0), (-0.55, 0.0), (0.30, 0.0), (0.50, 0.45), (0.835, 0.55),
                  (1.0, 0.85), (2.19, 0.85)])
-crease4 = pchip([(-2.16, 0.0), (1.5, 0.0), (1.85, 0.55), (2.19, 0.55)])
+crease4 = pchip([(-2.16, 1.0), (-1.90, 1.0), (-1.55, 1.0), (-1.20, 0.92), (-0.85, 0.35),
+                 (-0.20, 0.0), (1.50, 0.0), (1.85, 0.55), (2.19, 0.55)])
+crease3 = pchip([(-2.16, 1.0), (-1.75, 0.9), (-1.25, 0.55), (-0.70, 0.0), (2.19, 0.0)])
 
 
 def _lerp2(a, b, t):
@@ -184,7 +206,7 @@ def _lerp2(a, b, t):
 def section_points(y):
     c = section_ctrl(y)
     ext = [(-c[1][0], c[1][1])] + c + [(-c[6][0], c[6][1])]
-    cr = {4: crease4(y), 5: crease5(y)}
+    cr = {3: crease3(y), 4: crease4(y), 5: crease5(y)}
     out = []
     for i in range(7):
         p0, p1, p2, p3 = ext[i], ext[i + 1], ext[i + 2], ext[i + 3]

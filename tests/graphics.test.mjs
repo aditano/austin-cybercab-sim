@@ -2,9 +2,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  GRAPHICS_KEY, PRESET_GRAPHICS, QUALITY_ORDER, adaptQuality, autoQualityPreset, emptyAdaptState,
+  GRAPHICS_KEY, PRESET_GRAPHICS, QUALITY_ORDER, adaptQuality, autoQualityPreset, emptyAdaptState, forcedQuality,
   graphicsFor, parseGraphicsStore, resolvedQuality, showContactDisc, streetBudget,
 } from '../src/logic.ts';
+
+test('a forced preset query bypasses the software-GL lock', () => {
+  assert.equal(forcedQuality(''), null);
+  assert.equal(forcedQuality('?preset=ultra'), null);
+  assert.equal(forcedQuality('?force=1&preset=cinema'), null);
+  assert.equal(forcedQuality('?preset=ultra&force=1'), 'ultra');
+  assert.equal(forcedQuality('preset=high&force=1'), 'high');
+});
 
 test('Auto picks a hardware-aware preset and never starts software GL above Low', () => {
   assert.equal(autoQualityPreset({ software: true, coarse: false }), 'low');

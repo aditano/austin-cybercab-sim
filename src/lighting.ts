@@ -19,6 +19,7 @@ export function createLighting(
   sun: THREE.DirectionalLight,
   composer: EffectComposer,
   sunOffset: THREE.Vector3,
+  sky: THREE.Object3D,
 ): Lighting {
   const hooked = new Set<THREE.Material>();
   const originals = new WeakMap<THREE.Material, THREE.Material['onBeforeCompile']>();
@@ -28,6 +29,8 @@ export function createLighting(
   let probeTarget: THREE.WebGLCubeRenderTarget | null = null;
   let probeTick = 0;
   let selects: THREE.Mesh[] = [];
+  let pmremGenerator: THREE.PMREMGenerator | null = null;
+  let pmremTarget: THREE.WebGLRenderTarget | null = null;
   const lightDir = new THREE.Vector3();
 
   function remember(material: THREE.Material) {
@@ -78,14 +81,27 @@ export function createLighting(
     csm = null;
   }
 
+  function paintMeshes(meshes: THREE.Mesh[]): THREE.Mesh[] {
+    return meshes.filter((mesh) => {
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      return mats.some((mat) => mat instanceof THREE.MeshStandardMaterial && !mat.transparent && mat.metalness >= 0.5 && mat.roughness <= 0.45);
+    });
+  }
+
   function ensureProbe(size: number) {
     if (probeTarget && probeTarget.width === size) return;
     probeTarget?.dispose();
-    probeTarget = new THREE.WebGLCubeRenderTarget(size, { type: THREE.HalfFloatType, colorSpace: THREE.LinearSRGBColorSpace });
-    probe = new THREE.CubeCamera(0.8, 420, probeTarget);
+    probeTarget = new THREE.WebGLCubeRenderTarget(size, {
+      type: THREE.UnsignedByteType,
+      colorSpace: THREE.LinearSRGBColorSpace,
+      generateMipmaps: false,
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+    });
+    probe = new THREE.CubeCamera(1.6, 480, probeTarget);
   }
 
-  function applyEnv(map: THREE.CubeTexture | null) {
+  function applyEnv(map: THREE.Texture | null) {
     for (const obj of selects) {
       obj.traverse((child) => {
         if (!(child instanceof THREE.Mesh)) return;
@@ -110,13 +126,18 @@ export function createLighting(
         obj.traverse((child) => { if (child instanceof THREE.Mesh) meshes.push(child); });
       }
       selects = meshes;
+      // SSR copies its list at creation. The cab is mounted after the first apply,
+      // so a forced Ultra preset would otherwise reflect an empty selection.
+      if (ssr) ssr.selects = paintMeshes(selects);
     },
     apply(graphics, quality, software) {
       const useCsm = graphics.shadows && graphics.cascades > 0 && !software;
       sun.castShadow = graphics.shadows && !useCsm;
       sun.intensity = useCsm ? 0 : 3.05;
       if (graphics.shadows && graphics.shadowSize > 0) sun.shadow.mapSize.set(graphics.shadowSize, graphics.shadowSize);
-      sun.shadow.radius = quality === 'ultra' ? 8 : quality === 'high' ? 4 : 2.5;
+      sun.shadow.radius = quality === 'ultra' ? 2.5 : quality === 'high' ? 2 : 1.5;
+      sun.shadow.bias = -0.0004;
+      sun.shadow.normalBias = quality === 'ultra' ? 0.02 : 0.028;
       if (sun.shadow.map) {
         sun.shadow.map.dispose();
         sun.shadow.map = null;
@@ -134,13 +155,16 @@ export function createLighting(
             shadowMapSize: graphics.shadowSize,
             lightIntensity: 3.05,
             lightDirection: sunOffset.clone().normalize().negate(),
-            shadowBias: -0.00012,
+            shadowBias: -0.00025,
           });
           csm.fade = true;
           for (const light of csm.lights) {
             light.color.set('#ffb56a');
-            light.shadow.normalBias = 0.04;
-            light.shadow.radius = sun.shadow.radius;
+            // A large normal bias lifts the shadow off the tires (peter-panning).
+            // Keep it small and let a modest map bias hide acne on the hood.
+            light.shadow.normalBias = quality === 'ultra' ? 0.012 : 0.018;
+            light.shadow.bias = -0.00025;
+            light.shadow.radius = quality === 'ultra' ? 2 : 1.5;
           }
         }
         hookObject(scene);
@@ -150,28 +174,32 @@ export function createLighting(
 
       const wantProbe = graphics.reflections === 'probe' || graphics.reflections === 'ssr';
       if (wantProbe && !software) ensureProbe(quality === 'ultra' ? 128 : 64);
-      else {
+        else {
         applyEnv(null);
         probe = null;
         probeTarget?.dispose();
         probeTarget = null;
+        pmremTarget?.dispose();
+        pmremTarget = null;
       }
 
       const wantSsr = graphics.reflections === 'ssr' && !software && quality === 'ultra';
       if (wantSsr && !ssr) {
         ssr = new SSRPass({
           renderer, scene, camera, width: innerWidth, height: innerHeight,
-          selects: selects.length ? selects : null,
+          selects: paintMeshes(selects),
           groundReflector: null,
         });
-        ssr.thickness = 0.018;
-        ssr.maxDistance = 0.12;
-        ssr.opacity = 0.55;
+        // 0.12 m only caught surfaces touching the paint, which read as speckles.
+        ssr.thickness = 0.22;
+        ssr.maxDistance = 14;
+        ssr.opacity = 0.38;
+        ssr.blur = true;
         composer.insertPass(ssr, 1);
       }
       if (ssr) {
         ssr.enabled = wantSsr;
-        ssr.selects = selects.length ? selects : null;
+        ssr.selects = paintMeshes(selects);
       }
     },
     update(target) {
@@ -182,14 +210,33 @@ export function createLighting(
       }
       if (probe && probeTarget) {
         probeTick += 1;
-        if (probeTick % 12 === 0) {
+        if (probeTick === 1 || probeTick % 24 === 0) {
           probe.position.copy(target);
-          probe.position.y += 1.4;
-          const previous = scene.background;
-          scene.background = new THREE.Color('#e4c3a2');
-          probe.update(renderer, scene);
-          scene.background = previous;
-          applyEnv(probeTarget.texture);
+          probe.position.y += 3.8;
+          const cabRoot = scene.getObjectByName('Cybercab');
+          const cabWas = cabRoot?.visible ?? true;
+          const skyScale = sky.scale.x;
+          if (cabRoot) cabRoot.visible = false;
+          // The sky dome is tens of kilometres across. Scale it inside the cube far plane
+          // so the reflection is the sky, not a flat fill with a hard horizon seam.
+          sky.scale.setScalar(320);
+          try {
+            probe.update(renderer, scene);
+            // A half-float cube map comes back invalid on SwiftShader and the bloom
+            // pass then clears the frame. Capture 8-bit and bake the PMREM here,
+            // before the beauty pass, so the conversion does not steal the framebuffer.
+            pmremGenerator ??= new THREE.PMREMGenerator(renderer);
+            pmremTarget = pmremGenerator.fromCubemap(probeTarget.texture as THREE.CubeTexture, pmremTarget);
+            applyEnv(pmremTarget.texture);
+          } finally {
+            sky.scale.setScalar(skyScale);
+            if (cabRoot) cabRoot.visible = cabWas;
+            renderer.setRenderTarget(null);
+            const canvas = renderer.domElement;
+            renderer.setViewport(0, 0, canvas.width, canvas.height);
+            renderer.setScissor(0, 0, canvas.width, canvas.height);
+            renderer.setScissorTest(false);
+          }
         }
       }
     },
