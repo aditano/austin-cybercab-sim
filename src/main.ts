@@ -192,9 +192,11 @@ const gradePass = new ShaderPass({
     void main(){
       vec3 c=texture2D(tDiffuse,vUv).rgb;
       float l=dot(c,vec3(0.2126,0.7152,0.0722));
-      c=mix(vec3(l),c,1.04);
-      c.r+=0.004*(c.r-0.45);
-      c.b+=0.018*(0.55-l);
+      c=mix(vec3(l),c,1.02);
+      float sky=smoothstep(0.38,0.78,vUv.y);
+      c.r=mix(c.r,c.r*0.94,sky);
+      c.g=mix(c.g,c.g*0.96,sky);
+      c.b=mix(c.b,min(c.b+0.045,1.0),sky);
       c=pow(max(c,0.0),vec3(0.96));
       gl_FragColor=vec4(c,1.0);
     }`,

@@ -100,11 +100,13 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
   const pavement=texturedMaterial(0xffffff,concreteDiff,concreteNor,concreteRough,.55,.96);
   const curb=texturedMaterial(0xd7d2c8,concreteDiff,concreteNor,concreteRough,.7,.9);
   const metal=new THREE.MeshStandardMaterial({color:0x3a4244,metalness:.82,roughness:.28,envMapIntensity:1.05});
-  const stripe=new THREE.MeshStandardMaterial({color:0xa89880,roughness:0.9,metalness:0,envMapIntensity:0.05});
-  const gold=new THREE.MeshStandardMaterial({color:0xb08d48,roughness:0.84,metalness:0.04,envMapIntensity:0.08});
-  const crackMat=new THREE.MeshStandardMaterial({color:0x1a1c1e,roughness:0.95,polygonOffset:true,polygonOffsetFactor:-3});
-  const patchMat=new THREE.MeshStandardMaterial({color:0x3e4448,roughness:0.9,polygonOffset:true,polygonOffsetFactor:-2});
-  const tarMat=new THREE.MeshStandardMaterial({color:0x121416,roughness:0.84,polygonOffset:true,polygonOffsetFactor:-4});
+  const stripe=new THREE.MeshStandardMaterial({color:0xb7ad98,roughness:0.88,metalness:0,envMapIntensity:0.04});
+  const lane=new THREE.MeshStandardMaterial({color:0x6e6556,roughness:0.94,metalness:0,envMapIntensity:0.02});
+  const gold=new THREE.MeshStandardMaterial({color:0x7a6840,roughness:0.9,metalness:0.02,envMapIntensity:0.04});
+  // Unlit so the sun and HDRI cannot lift the wear back up to the asphalt color.
+  const crackMat=new THREE.MeshBasicMaterial({color:0x141618,polygonOffset:true,polygonOffsetFactor:-6,polygonOffsetUnits:-4});
+  const patchMat=new THREE.MeshStandardMaterial({color:0x23282c,roughness:1,metalness:0,envMapIntensity:0,polygonOffset:true,polygonOffsetFactor:-4,polygonOffsetUnits:-2});
+  const tarMat=new THREE.MeshBasicMaterial({color:0x0c0e10,polygonOffset:true,polygonOffsetFactor:-8,polygonOffsetUnits:-6});
   const lawn=new THREE.MeshStandardMaterial({color:0x4d643c,roughness:.94});
   const benchWood=new THREE.MeshStandardMaterial({map:barkDiff,color:0xc4b2a2,roughness:.88});
   const trunkMat=new THREE.MeshStandardMaterial({map:barkDiff,normalMap:barkNor,color:0xffffff,roughness:.86,normalScale:new THREE.Vector2(.8,.8)});
@@ -295,8 +297,8 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
         const end=a.clone().addScaledVector(direction,Math.min(d+11.6,len));
         for(const side of [-1,1])strip(parent,center.clone().addScaledVector(normal,side*(width/2+.16)),end.clone().addScaledVector(normal,side*(width/2+.16)),.28,.18,curb,.16);
         if(major)for(const side of [-1,1])strip(parent,center.clone().addScaledVector(normal,side*.17),end.clone().addScaledVector(normal,side*.17),.10,.165,gold,.012);
-        if(/Congress Avenue/.test(f.name||''))for(const side of [-1,1])strip(parent,center.clone().addScaledVector(normal,side*(width/2-1.7)),end.clone().addScaledVector(normal,side*(width/2-1.7)),.12,.17,stripe,.02);
-        if(Math.floor((travelled+d)/12)%2===0)for(const offset of major?[-width*.25,width*.25]:[0])strip(parent,center.clone().addScaledVector(normal,offset),end.clone().addScaledVector(normal,offset),.12,.165,stripe,.012);
+        if(/Congress Avenue/.test(f.name||''))for(const side of [-1,1])strip(parent,center.clone().addScaledVector(normal,side*(width/2-1.7)),end.clone().addScaledVector(normal,side*(width/2-1.7)),.14,.17,lane,.02);
+        if(Math.floor((travelled+d)/12)%2===0)for(const offset of major?[-width*.25,width*.25]:[0])strip(parent,center.clone().addScaledVector(normal,offset),end.clone().addScaledVector(normal,offset),.14,.165,lane,.014);
       }
       if(major)for(let d=12;d<len-8;d+=28) {
         const congress=/Congress Avenue/.test(f.name||'');
@@ -528,28 +530,29 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       const dir=seg.b.clone().sub(seg.a).normalize();
       const normal=new THREE.Vector2(-dir.y, dir.x);
       const yaw=Math.atan2(dir.x, dir.y);
-      const step=seg.congress?14:28;
-      for(let t=4;t<len-3;t+=step) {
+      const hero=hubs.some(h=>h.distanceToSquared(seg.a)<90*90 || h.distanceToSquared(seg.b)<90*90);
+      const step=seg.congress?(hero?8:14):28;
+      for(let t=3;t<len-2;t+=step) {
         const p=seg.a.clone().addScaledVector(dir,t);
         if(!near(p)) continue;
         const seed=Math.round(p.x*3+p.y);
-        if(seg.congress && seams<40) {
-          box(parent,p.x,0.188,p.y,seg.width*0.92,0.02,0.22,tarMat,yaw);
+        if(seg.congress && seams<72) {
+          box(parent,p.x,0.2,p.y,seg.width*0.9,0.03,0.72,tarMat,yaw);
           seams++;
         }
-        if(patches<28 && seeded(seed)<0.55) {
-          const q=p.clone().addScaledVector(normal,(seeded(seed+2)-0.5)*seg.width*0.28);
-          box(parent,q.x,0.186,q.y,2.4+seeded(seed+3)*2.2,0.02,3.1+seeded(seed+4),patchMat,yaw+(seeded(seed+5)-0.5)*0.35);
+        if(patches<48 && seeded(seed)<0.7) {
+          const q=p.clone().addScaledVector(normal,(seeded(seed+2)-0.5)*seg.width*0.32);
+          box(parent,q.x,0.198,q.y,3.2+seeded(seed+3)*3.4,0.028,4.2+seeded(seed+4)*2.2,patchMat,yaw+(seeded(seed+5)-0.5)*0.4);
           patches++;
         }
-        if(cracks<48 && seeded(seed+1)<0.7) {
-          let c=p.clone().addScaledVector(normal,(seeded(seed+6)-0.5)*seg.width*0.3);
+        if(cracks<80 && seeded(seed+1)<0.85) {
+          let c=p.clone().addScaledVector(normal,(seeded(seed+6)-0.5)*seg.width*0.34);
           let turn=yaw+(seeded(seed+7)-0.5)*1.1;
-          for(let i=0;i<5;i++) {
-            const piece=0.7+seeded(seed+i*3)*1.3;
-            turn+= (seeded(seed+i*9)-0.5)*0.7;
-            box(parent,c.x,0.19,c.y,0.07,0.018,piece,crackMat,turn);
-            c=c.clone().add(new THREE.Vector2(Math.sin(turn), Math.cos(turn)).multiplyScalar(piece*0.62));
+          for(let i=0;i<6;i++) {
+            const piece=1.1+seeded(seed+i*3)*1.8;
+            turn+= (seeded(seed+i*9)-0.5)*0.55;
+            box(parent,c.x,0.205,c.y,0.18,0.02,piece,crackMat,turn);
+            c=c.clone().add(new THREE.Vector2(Math.sin(turn), Math.cos(turn)).multiplyScalar(piece*0.7));
           }
           cracks++;
         }
@@ -701,18 +704,26 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       bark.push(geo);
     }
     const crown: THREE.BufferGeometry[] = [];
-    for (let i = 0; i < 58; i++) {
+    for (let i = 0; i < 84; i++) {
       const ang = seeded(i * 19) * Math.PI * 2;
-      const rad = Math.pow(seeded(i * 7), 0.5) * 5.1;
-      const lift = Math.sqrt(Math.max(0, 1 - (rad / 5.4) ** 2));
-      const y = 3.2 + lift * 2.35 + (seeded(i * 3) - 0.45) * 0.65;
-      const ico = new THREE.IcosahedronGeometry(0.72 + seeded(i * 11) * 1.05, 1);
-      const color = new THREE.Color().setHSL(0.28 + seeded(i * 13) * 0.06, 0.46, 0.28 + seeded(i * 5) * 0.16);
+      const rad = Math.pow(seeded(i * 7), 0.42) * 6.3;
+      const lift = Math.sqrt(Math.max(0, 1 - (rad / 6.7) ** 2));
+      const droop = Math.pow(rad / 6.3, 1.55) * 1.25;
+      const y = 2.65 + lift * 2.55 - droop + (seeded(i * 3) - 0.5) * 0.35;
+      const ico = new THREE.IcosahedronGeometry(0.48 + seeded(i * 11) * 0.92, 1);
+      ico.scale(1, 0.68 + seeded(i * 17) * 0.16, 1);
+      const color = new THREE.Color().setHSL(0.27 + seeded(i * 13) * 0.08, 0.4 + seeded(i * 5) * 0.12, 0.16 + lift * 0.22);
       const count = ico.attributes.position.count;
       const colors = new Float32Array(count * 3);
-      for (let v = 0; v < count; v++) color.toArray(colors, v * 3);
+      const pos = ico.attributes.position;
+      for (let v = 0; v < count; v++) {
+        const ny = pos.getY(v);
+        const shade = color.clone();
+        if (ny < 0) shade.multiplyScalar(0.55);
+        shade.toArray(colors, v * 3);
+      }
       ico.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      ico.translate(Math.cos(ang) * rad, y, Math.sin(ang) * rad * 0.88);
+      ico.translate(Math.cos(ang) * rad, y, Math.sin(ang) * rad * 0.9);
       crown.push(ico);
     }
     const barkGeo = mergeGeometries(bark);

@@ -139,11 +139,13 @@ The lavender column was the Medium Kenney curved lamp. `light-curved.glb` stores
 | Ask | What the new still shows | Status |
 | --- | --- | --- |
 | Sidewalk pillar | East-sidewalk lamp is a lamp-height prop, not a column. | fixed |
-| Trees | Instanced trunk, limbs, and a crown of 58 icosahedron clumps. Green samples in the walk frame went from 15,673 to 35,028. They are solid clumps, not a scanned live oak. | partial |
+| Trees | Instanced trunk, limbs, and a wider crown of 84 flattened clumps with darker undersides. They read as mass, not as a scanned live oak. The silhouette is still a cluster of spheres. | partial |
 | Cars | Chamfered loft, wheel-arch stations, mirrors, separate rims, clearcoat on the HDRI. Still an original low-poly body. Sketchfab needs a login here; Khronos samples have no street sedan. | partial |
 | Towers | Tall footprints get a masonry podium, an inset shaft, a second setback, cornices, and every fourth tall building is reflective mullioned glass. The opening block is still a low extrusion with shader windows. | partial |
-| Sky | Procedural sky mesh is hidden. Background is Kloofendal overcast pure sky. The top of the walk frame runs from about 47 to 241, so the clouds are in the picture. Mean sky is near the photograph's grey. | partial |
-| Road | Crack, patch, and tar boxes sit on Congress within 160 m of the two hubs. Lane and center paint are dirtier (`#a89880`, `#b08d48`) and no longer share the asphalt color. At the walk angle they are easy to miss next to the photograph. | partial |
+| Sky | Procedural sky mesh is hidden. Background is Kloofendal overcast pure sky, with a cooler grade on the upper frame. Bright sky pixels in the walk still average about rgb(213, 215, 216). The photograph's top rows average about rgb(200, 208, 217). Clouds are in the frame. | partial |
+| Road | Crack, patch, and tar decals on Congress near the hubs are unlit, so the sun does not lift them back to the asphalt color. The walk still has about 14,400 road pixels under luma 70. Lane paint samples about rgb(191, 186, 174), down from a cream near rgb(231, 224, 209). It is still cleaner than the photograph. | partial |
 | People | Michelle and the Ready Player Me sample, with Soldier's Walk and Idle retargeted. Soldier and X Bot are not spawned. Two rigs and a tint are not a sidewalk crowd. | partial |
 
-What still looks fake, in order: the crowns are clumps of spheres; the cars are still a built mesh, not a photographed car; the near buildings are extruded footprints; the road wear is a few dark boxes; the people are two game skeletons. This is not GTA 6, and it does not match the Congress Avenue photograph.
+Pixel check on the same walk still: round 3 had a lavender run 241 pixels tall around x=892. This still's longest lavender run is 63 pixels of blue-grey glass around x=1084. There is no sidewalk column.
+
+What still looks fake, in order: the crowns are clumps of spheres; the cars are still a built mesh, not a photographed car; the near buildings are extruded footprints; the road wear is dark boxes rather than photographed asphalt; the people are two game skeletons. This is not GTA 6, and it does not match the Congress Avenue photograph.
