@@ -10,16 +10,18 @@ Credit (optional): Kenney.nl
 
 Bundled after meshopt compression: `sedan`, `sedan-sports`, `hatchback-sports`, `suv`, `suv-luxury`, `van`, `truck`, `taxi`, `police`.
 
-These Kenney files stay in the repo. Visible traffic uses the original glTF bodies in `traffic-sedan.glb`, `traffic-suv.glb`, and `traffic-hatch.glb` (`tools/traffic_cars.py`). They are proportioned like a sedan, an SUV, and a hatch, with glass, tires, headlights, and taillights. No third-party car scan was small enough to ship.
+These Kenney files stay in the repo. Visible traffic uses the original glTF bodies in `traffic-sedan.glb`, `traffic-suv.glb`, and `traffic-hatch.glb` (`tools/traffic_cars.py`). Each body is a chamfered loft with wheel-arch stations, mirrors, glass, tire and rim meshes, and a `KHR_materials_clearcoat` paint. The runtime recolors the body and keeps that clearcoat against the HDRI. No third-party car scan was small enough to ship. Sketchfab downloads from this environment need a login, and the Khronos sample set has no street sedan.
 
 ## People — Mixamo rigs via three.js examples
 
 | File | Source | Clips used | License |
 | --- | --- | --- | --- |
-| `people/soldier.glb` | [three.js r180 Soldier.glb](https://github.com/mrdoob/three.js/blob/r180/examples/models/gltf/Soldier.glb) (Mixamo “Vanguard”) | Idle, Walk, Run | Mixamo / Adobe. Usable in real-time apps per Mixamo terms. Credit: Mixamo. |
-| `people/xbot.glb` | [three.js r180 Xbot.glb](https://github.com/mrdoob/three.js/blob/r180/examples/models/gltf/Xbot.glb) (Mixamo “X Bot”) | idle, walk, run | Mixamo / Adobe. Credit: Mixamo. |
+| `people/soldier.glb` | [three.js r180 Soldier.glb](https://github.com/mrdoob/three.js/blob/r180/examples/models/gltf/Soldier.glb) (Mixamo “Vanguard”) | Idle, Walk, Run are the clip source only. The soldier mesh is not placed. | Mixamo / Adobe. Usable in real-time apps per Mixamo terms. Credit: Mixamo. |
+| `people/xbot.glb` | [three.js r180 Xbot.glb](https://github.com/mrdoob/three.js/blob/r180/examples/models/gltf/Xbot.glb) (Mixamo “X Bot”) | Not placed. | Mixamo / Adobe. Credit: Mixamo. |
+| `people/michelle.glb` | [three.js r180 Michelle.glb](https://github.com/mrdoob/three.js/blob/r180/examples/models/gltf/Michelle.glb) (Mixamo) | Walk and Idle retargeted from Soldier onto the same `mixamorig:` skeleton. Her own clip is a dance and is not used. | Mixamo / Adobe. Credit: Mixamo. |
+| `people/civilian.glb` | [three.js r180 readyplayer.me.glb](https://github.com/mrdoob/three.js/blob/r180/examples/models/gltf/readyplayer.me.glb) | Same Walk and Idle, with the `mixamorig:` prefix stripped to match this sample’s bone names. The file has no clip of its own. | Sample avatar shipped with the three.js examples. Credit: Ready Player Me. |
 
-Outfit variation is a runtime tint of cloned materials (several clothing colors per rig). Michelle’s three.js clip is a dance, not a walk, so it is not bundled. Ready Player Me’s sample has no walk clip.
+Sidewalk pedestrians are Michelle and the Ready Player Me sample, in ordinary clothes, with a shirt tint. The soldier and the robot stay in the repo so the license record still has them, and they are not spawned.
 
 ## Street props — Kenney City Kit (CC0)
 
@@ -54,15 +56,15 @@ Jacaranda, island, pine, and fir photogrammetry trees from Poly Haven are 60–9
 | `props/fire-escape.glb` | Modular Fire Escape (simplified) | https://polyhaven.com/a/modular_fire_escape |
 | `props/shrub.glb` | Shrub 01 (simplified) | https://polyhaven.com/a/shrub_01 |
 
-These three are CC0 scans, mesh-simplified so a phone on Low can skip them. Low keeps Kenney props. There is no small CC0 photogrammetry car that fits instanced downtown traffic, so moving traffic stays the Kenney Car Kit with a clearcoat material. Sketchfab downloads require a login and were not used.
+These three are CC0 scans, mesh-simplified so a phone on Low can skip them. Low keeps Kenney props. There is no small CC0 photogrammetry car that fits instanced downtown traffic, so moving traffic uses the original loft bodies from `tools/traffic_cars.py`. Sketchfab downloads require a login and were not used.
 
 The phone wordmark is set in [Inter](https://fonts.google.com/specimen/Inter) (SIL Open Font License), a free stand-in. It is not Tesla’s Universal Sans, and no Tesla logo file is bundled.
 
 ## Textures and HDRI
 
-Poly Haven CC0: Kloofendal 48d Partly Cloudy Pure Sky (1K, golden hour), Evening Road 01 Pure Sky (kept, unused by the loader), Asphalt 02, Concrete Floor Worn 001, Concrete Wall 008, Bark Brown 02, Tree Small 02 leaf atlas, Roof Tiles 14.
+Poly Haven CC0: Kloofendal Overcast Pure Sky (1K, the visible background), Kloofendal 48d Partly Cloudy Pure Sky (1K, kept, not the background), Evening Road 01 Pure Sky (kept, unused by the loader), Asphalt 02, Concrete Floor Worn 001, Concrete Wall 008, Bark Brown 02, Tree Small 02 leaf atlas, Roof Tiles 14.
 
-[https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky](https://polyhaven.com/a/kloofendal_48d_partly_cloudy_puresky)  
+Visible sky: [https://polyhaven.com/a/kloofendal_overcast_puresky](https://polyhaven.com/a/kloofendal_overcast_puresky) (`textures/kloofendal_overcast_puresky_1k.hdr`). The earlier partly-cloudy file is still in `textures/` and is not the background. The procedural sky shader is in the scene only so the reflection probe can scale it, and it is hidden so the HDRI clouds are the background.  
 [https://polyhaven.com/a/roof_tiles_14](https://polyhaven.com/a/roof_tiles_14)
 
 ambientCG CC0, 2K JPEG, color plus normal and roughness. Masonry walls sample these with mipmaps and anisotropic filtering. Windows are cut in the shader so a photo of a whole facade is not tiled. The older Facade001/005/007/014 color JPEGs remain on disk and are not applied.
@@ -77,7 +79,9 @@ ambientCG CC0, 2K JPEG, color plus normal and roughness. Masonry walls sample th
 | `textures/facades/facade-c.jpg` | Facade007 (unused) | https://ambientcg.com/view?id=Facade007 |
 | `textures/facades/facade-d.jpg` | Facade014 (unused) | https://ambientcg.com/view?id=Facade014 |
 
-Street trees in the hero blocks are instanced live-oak canopies (bark and leaf textures already listed). The Poly Haven apartment facade, fire escape, and shrub scans are not placed on the sidewalk. A freestanding facade module was reading as a blue column.
+Street trees are instanced 3D live oaks: a trunk and limbs (bark texture) plus a solid crown of icosahedron clumps (`liveOakGeometry` in `src/world.ts`). Card canopies and Kenney cone trees are not placed. The leaf atlas stays on disk and is not wrapped onto the crown. The Poly Haven apartment facade, fire escape, and shrub scans are not placed on the sidewalk.
+
+Kenney props that are instanced (the curved lamp on Medium, planters) have their node scale baked into the geometry first. Without that, the east-sidewalk lamp was a stretched column.
 
 Kenney stop and warning signs are still in `public/models` but are not instanced. Their glTF positions are integer-quantized and became a giant octagon at street scale.
 

@@ -47,7 +47,6 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
   const wallDiff=mapTexture('wall_diff.jpg',true),wallNor=mapTexture('wall_nor.jpg',false),wallRough=mapTexture('wall_rough.jpg',false);
   const concreteDiff=mapTexture('concrete_diff.jpg',true),concreteNor=mapTexture('concrete_nor.jpg',false),concreteRough=mapTexture('concrete_rough.jpg',false);
   const barkDiff=mapTexture('bark_diff.jpg',true),barkNor=mapTexture('bark_nor.jpg',false);
-  const leavesDiff=mapTexture('leaves_diff.jpg',true),leavesAlpha=mapTexture('leaves_alpha.png',false);
   // World-space triplanar sampling so instanced road boxes and extruded walls share one texel size.
   function texturedMaterial(color:number,diffuse:THREE.Texture,normal:THREE.Texture,rough:THREE.Texture,scale:number,roughness:number,physical=false) {
     const material=physical
@@ -101,15 +100,17 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
   const pavement=texturedMaterial(0xffffff,concreteDiff,concreteNor,concreteRough,.55,.96);
   const curb=texturedMaterial(0xd7d2c8,concreteDiff,concreteNor,concreteRough,.7,.9);
   const metal=new THREE.MeshStandardMaterial({color:0x3a4244,metalness:.82,roughness:.28,envMapIntensity:1.05});
-  const stripe=new THREE.MeshStandardMaterial({color:0xf4f0dc,roughness:0.42,metalness:.02,envMapIntensity:.35});
-  const gold=new THREE.MeshStandardMaterial({color:0xe0c27a,roughness:0.48,metalness:.18,envMapIntensity:.4});
+  const stripe=new THREE.MeshStandardMaterial({color:0x9a9588,roughness:0.78,metalness:.02,envMapIntensity:.2});
+  const gold=new THREE.MeshStandardMaterial({color:0xb09a62,roughness:0.72,metalness:.12,envMapIntensity:.25});
+  const crackMat=new THREE.MeshStandardMaterial({color:0x1a1c1e,roughness:0.95,polygonOffset:true,polygonOffsetFactor:-3});
+  const patchMat=new THREE.MeshStandardMaterial({color:0x3e4448,roughness:0.9,polygonOffset:true,polygonOffsetFactor:-2});
+  const tarMat=new THREE.MeshStandardMaterial({color:0x121416,roughness:0.84,polygonOffset:true,polygonOffsetFactor:-4});
   const lawn=new THREE.MeshStandardMaterial({color:0x4d643c,roughness:.94});
   const benchWood=new THREE.MeshStandardMaterial({map:barkDiff,color:0xc4b2a2,roughness:.88});
   const trunkMat=new THREE.MeshStandardMaterial({map:barkDiff,normalMap:barkNor,color:0xffffff,roughness:.86,normalScale:new THREE.Vector2(.8,.8)});
-  const leafMat=new THREE.MeshStandardMaterial({
-    map:leavesDiff,alphaMap:leavesAlpha,alphaTest:.38,side:THREE.DoubleSide,roughness:.8,color:0xffffff,envMapIntensity:.2,
+  const oakLeafMat=new THREE.MeshStandardMaterial({
+    vertexColors:true,roughness:0.9,color:0xffffff,envMapIntensity:0.2,
   });
-  leafMat.userData.castShadow=false;
   const waterMaterial=new THREE.MeshPhysicalMaterial({color:0x2a656c,metalness:0.55,roughness:0.08,transparent:true,opacity:0.92,envMapIntensity:1.7,clearcoat:1,clearcoatRoughness:.12});
   function pbrMap(file:string, srgb:boolean) {
     const texture=texLoader.load(`${import.meta.env.BASE_URL}textures/facades/${file}`);
@@ -202,6 +203,26 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     return material;
   }
   const facadeMaterials=wallSets.map((_,index)=>makeFacade(index));
+  function mullionMap(tint:string) {
+    const canvas=document.createElement('canvas'); canvas.width=256; canvas.height=512;
+    const ctx=canvas.getContext('2d')!;
+    ctx.fillStyle=tint; ctx.fillRect(0,0,256,512);
+    ctx.strokeStyle='rgba(18,22,26,0.88)'; ctx.lineWidth=5;
+    for(let x=0;x<=256;x+=16){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,512); ctx.stroke(); }
+    for(let y=0;y<=512;y+=28){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(256,y); ctx.stroke(); }
+    const texture=new THREE.CanvasTexture(canvas);
+    texture.colorSpace=THREE.SRGBColorSpace;
+    texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
+    texture.anisotropy=coarse?4:8;
+    return texture;
+  }
+  function glassWall(tint:string, color:number) {
+    return new THREE.MeshPhysicalMaterial({
+      map:mullionMap(tint), color, metalness:0.78, roughness:0.07,
+      clearcoat:1, clearcoatRoughness:0.1, envMapIntensity:1.75,
+    });
+  }
+  const glassWalls=[glassWall('#c9d4d8',0xffffff), glassWall('#b7c6c2',0xf2f6f4), glassWall('#d9d4cc',0xf7f4ef)];
   const manholeCanvas=document.createElement('canvas');manholeCanvas.width=manholeCanvas.height=128;
   const manholeCtx=manholeCanvas.getContext('2d')!;
   manholeCtx.fillStyle='#2e3336';manholeCtx.beginPath();manholeCtx.arc(64,64,60,0,Math.PI*2);manholeCtx.fill();
@@ -224,33 +245,35 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     const geo=new THREE.ExtrudeGeometry(shape,{depth:height,bevelEnabled:false});geo.rotateX(-Math.PI/2);
     const m=new THREE.Mesh(geo,material);m.position.y=base;m.castShadow=height>1;m.receiveShadow=true;parent.add(m);return {m,pts};
   }
-  const leafCard=new THREE.PlaneGeometry(1,1);
-  const leafUv=leafCard.attributes.uv as THREE.BufferAttribute;
-  for(let i=0;i<leafUv.count;i++) leafUv.setXY(i,leafUv.getX(i)*0.5,0.12+leafUv.getY(i)*0.76);
-  function tree(parent:THREE.Object3D,x:number,z:number,seed:number) {
-    const h=7.6+seeded(seed)*2.8;
-    const trunkGeo=new THREE.CylinderGeometry(.18,.34,h*.62,7,1);
-    trunkGeo.translate(0,h*.31,0);
-    const trunkUv=trunkGeo.attributes.uv as THREE.BufferAttribute;
-    for(let i=0;i<trunkUv.count;i++) trunkUv.setXY(i,trunkUv.getX(i)*2,trunkUv.getY(i)*(h*.22));
-    const trunkMesh=new THREE.Mesh(trunkGeo,trunkMat);
-    trunkMesh.position.set(x,0,z);
-    trunkMesh.castShadow=true;
-    trunkMesh.receiveShadow=true;
-    parent.add(trunkMesh);
-    const crown=h*.72;
-    for(let i=0;i<11;i++) {
-      const leaf=new THREE.Mesh(leafCard,leafMat);
-      const ang=seeded(seed+i*17)*Math.PI*2;
-      const rad=(.25+seeded(seed+i*3)*.85)*(h*.38);
-      leaf.position.set(x+Math.cos(ang)*rad*.45,crown+(seeded(seed+i*5)-.45)*1.4,z+Math.sin(ang)*rad*.4);
-      leaf.scale.set(h*(.46+seeded(seed+i)*.2),h*(.26+seeded(seed+i*9)*.1),1);
-      leaf.rotation.set((seeded(seed+i*11)-.5)*.7,ang,(seeded(seed+i*13)-.5)*.4);
-      leaf.castShadow=false;
-      parent.add(leaf);
+  function centroidOf(pts:THREE.Vector2[]) {
+    const c=new THREE.Vector2();
+    for(const p of pts) c.add(p);
+    return c.multiplyScalar(1/Math.max(1,pts.length));
+  }
+  function insetPts(pts:THREE.Vector2[], t:number) {
+    const c=centroidOf(pts);
+    return pts.map(p=>c.clone().lerp(p, 1-t));
+  }
+  function extrude(parent:THREE.Object3D, pts:THREE.Vector2[], height:number, material:THREE.Material, base:number) {
+    if(pts.length<3||height<0.35) return;
+    const shape=new THREE.Shape(pts.map(p=>new THREE.Vector2(p.x,-p.y)));
+    const geo=new THREE.ExtrudeGeometry(shape,{depth:height,bevelEnabled:false});
+    geo.rotateX(-Math.PI/2);
+    const mesh=new THREE.Mesh(geo,material);
+    mesh.position.y=base;
+    mesh.castShadow=height>1;
+    mesh.receiveShadow=true;
+    parent.add(mesh);
+  }
+  function cornice(parent:THREE.Object3D, pts:THREE.Vector2[], y:number, material:THREE.Material, depth=0.7, thick=0.42) {
+    for(let e=1;e<pts.length;e++) {
+      const a=pts[e-1], b=pts[e], length=a.distanceTo(b);
+      if(length<1.2||length>160) continue;
+      box(parent,(a.x+b.x)/2,y,(a.y+b.y)/2,length,thick,depth,material,Math.atan2(-(b.y-a.y),b.x-a.x));
     }
   }
   const streetSpots:StreetSpot[]=[];
+  const wearSegs:{a:THREE.Vector2;b:THREE.Vector2;width:number;congress:boolean}[]=[];
   const dressed=new THREE.Group(); dressed.name='street-models';
   let junctions:THREE.Vector2[]=[];
   function nearJunction(p:THREE.Vector2,radius=15) {return junctions.some(j=>j.distanceToSquared(p)<radius*radius);}
@@ -263,6 +286,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     for(let i=1;i<pts.length;i++) {
       const a=pts[i-1],b=pts[i],len=a.distanceTo(b);if(len<0.2)continue;
       strip(parent,a,b,width+5,0.00,pavement);strip(parent,a,b,width,.10,walking?pavement:asphalt);
+      if(!walking) wearSegs.push({a:a.clone(),b:b.clone(),width,congress:/Congress Avenue/.test(f.name||'')});
       if(walking||service)continue;
       const direction=b.clone().sub(a).normalize(),normal=new THREE.Vector2(-direction.y,direction.x);
       for(let d=0.4;d<len;d+=Math.min(12,len)) {
@@ -308,34 +332,47 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
   const awnings: { x:number; z:number; yaw:number; width:number }[] = [];
   const shopSigns: { x:number; z:number; yaw:number; text:string }[] = [];
   const shopNames = ['COFFEE','BOOKS','MARKET','HOTEL','GALLERY','DINER','FLORIST','NEWS'];
+  function dressFrontage(pts:THREE.Vector2[]) {
+    const center=centroidOf(pts);
+    const nearHub=(center.x-80)**2+(center.y+20)**2<150*150 || (center.x-165)**2+(center.y+300)**2<120*120;
+    if(!nearHub) return;
+    for(let e=1;e<pts.length;e++) {
+      const a=pts[e-1],b=pts[e],length=a.distanceTo(b);
+      if(length<8||length>42||awnings.length>=28) continue;
+      const yaw=Math.atan2(-(b.y-a.y),b.x-a.x);
+      const nx=-Math.sin(yaw), nz=-Math.cos(yaw);
+      awnings.push({ x:(a.x+b.x)/2+nx*1.05, z:(a.y+b.y)/2+nz*1.05, yaw, width:Math.min(length-0.4,16) });
+      if(shopSigns.length<8 && length>10) shopSigns.push({ x:(a.x+b.x)/2+nx*1.2, z:(a.y+b.y)/2+nz*1.2, yaw, text:shopNames[shopSigns.length%shopNames.length] });
+    }
+  }
   function building(parent:THREE.Object3D,f:Feature,index:number) {
     const h=Math.min(250,Math.max(4,Number(f.height)||Number(f.levels)*3.5||8+seeded(index)*12));
+    const pts=f.coordinates.map(point);
+    if(pts.length<3) return;
     const tall=h>26;
-    const palette=tall?[3,4]:[0,1,2];
-    const material=facadeMaterials[palette[index%palette.length]];
-    const result=polygon(parent,f.coordinates,h,material,0);if(!result)return;
-    const pts=result.pts;
-    const center=pts.reduce((v,p)=>v.add(p),new THREE.Vector2()).multiplyScalar(1/pts.length);
-    const nearHub=(center.x-80)**2+(center.y+20)**2<150*150 || (center.x-165)**2+(center.y+300)**2<120*120;
-    if(nearHub) {
-      for(let e=1;e<pts.length;e++) {
-        const a=pts[e-1],b=pts[e],length=a.distanceTo(b);
-        if(length<8||length>42||awnings.length>=28) continue;
-        const yaw=Math.atan2(-(b.y-a.y),b.x-a.x);
-        const nx=-Math.sin(yaw), nz=-Math.cos(yaw);
-        awnings.push({ x:(a.x+b.x)/2+nx*1.05, z:(a.y+b.y)/2+nz*1.05, yaw, width:Math.min(length-0.4,16) });
-        if(shopSigns.length<8 && length>10) shopSigns.push({ x:(a.x+b.x)/2+nx*1.2, z:(a.y+b.y)/2+nz*1.2, yaw, text:shopNames[shopSigns.length%shopNames.length] });
-      }
+    const glass=tall && index%4===0;
+    const masonry=facadeMaterials[index%3];
+    const shaftMat=glass?glassWalls[index%glassWalls.length]:facadeMaterials[tall?3+(index%2):index%3];
+    dressFrontage(pts);
+    if(!tall) {
+      extrude(parent,pts,h,masonry,0);
+      if(h>9) cornice(parent,pts,h,masonry,0.62,0.36);
+      return;
     }
-    if(h>16) {
-      for(let e=1;e<pts.length;e++) {
-        const a=pts[e-1],b=pts[e],length=a.distanceTo(b);if(length<1||length>350)continue;
-        box(parent,(a.x+b.x)/2,h+.28,(a.y+b.y)/2,length,.56,.42,material,Math.atan2(-(b.y-a.y),b.x-a.x));
-      }
-    }
-    if(h>48) {
-      const c=pts.reduce((v,p)=>v.add(p),new THREE.Vector2()).multiplyScalar(1/pts.length);
-      box(parent,c.x,h+1.5,c.y,Math.min(14,6+h*0.02),2.4,Math.min(12,5+h*0.015),material);
+    const podiumH=Math.min(12, Math.max(5.4, 5+seeded(index)*3.4));
+    extrude(parent,pts,podiumH,masonry,0);
+    cornice(parent,pts,podiumH,masonry,0.85,0.4);
+    const shaft=insetPts(pts, 0.055+seeded(index+1)*0.05);
+    const setback=podiumH+(h-podiumH)*(0.46+seeded(index+4)*0.16);
+    extrude(parent,shaft,Math.max(2.2,setback-podiumH),shaftMat,podiumH);
+    cornice(parent,shaft,setback,shaftMat,0.55,0.32);
+    const crown=insetPts(shaft, 0.07+seeded(index+6)*0.06);
+    const crownMat=glass?glassWalls[(index+1)%glassWalls.length]:facadeMaterials[(index+1)%3];
+    extrude(parent,crown,Math.max(2.2,h-setback),crownMat,setback);
+    if(h>40) cornice(parent,crown,h,crownMat,0.48,0.28);
+    if(h>55) {
+      const c=centroidOf(crown);
+      box(parent,c.x,h+1.3,c.y,Math.min(12,5+h*0.015),2.2,Math.min(10,4+h*0.012),masonry);
     }
   }
   function signTexture(text:string,color:string) {
@@ -481,9 +518,48 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     const stem=new THREE.Mesh(new THREE.BoxGeometry(0.18,3.6,0.18), metal);
     stem.position.set(x,5.4,z); stem.castShadow=true; parent.add(stem);
   }
+  function placeWear(parent:THREE.Object3D) {
+    const hubs=[new THREE.Vector2(80,-20), new THREE.Vector2(165,-300)];
+    const near=(p:THREE.Vector2)=>hubs.some(h=>h.distanceToSquared(p)<200*200);
+    let cracks=0, patches=0, seams=0;
+    for(const seg of wearSegs) {
+      const len=seg.a.distanceTo(seg.b);
+      if(len<8) continue;
+      const mid=seg.a.clone().add(seg.b).multiplyScalar(0.5);
+      if(!near(mid)) continue;
+      const dir=seg.b.clone().sub(seg.a).normalize();
+      const normal=new THREE.Vector2(-dir.y, dir.x);
+      const yaw=Math.atan2(dir.x, dir.y);
+      for(let t=5;t<len-4;t+=24) {
+        const p=seg.a.clone().addScaledVector(dir,t);
+        const seed=Math.round(p.x*2+p.y);
+        if(seg.congress && seams<22 && Math.floor(t/24)%2===0) {
+          box(parent,p.x,0.172,p.y,seg.width*0.86,0.012,0.16,tarMat,yaw);
+          seams++;
+        }
+        if(patches<16 && seeded(seed)%1<0.45) {
+          const q=p.clone().addScaledVector(normal,(seeded(seed+2)-0.5)*seg.width*0.35);
+          box(parent,q.x,0.171,q.y,1.6+seeded(seed+3)*1.8,0.014,2.2+seeded(seed+4)*1.4,patchMat,yaw+(seeded(seed+5)-0.5)*0.4);
+          patches++;
+        }
+        if(cracks<36) {
+          let c=p.clone().addScaledVector(normal,(seeded(seed+6)-0.5)*seg.width*0.4);
+          const crackYaw=yaw+(seeded(seed+7)-0.5)*1.2;
+          for(let i=0;i<4;i++) {
+            const piece=0.45+seeded(seed+i*3)*0.9;
+            const turn=crackYaw+(seeded(seed+i*9)-0.5)*0.9;
+            box(parent,c.x,0.174,c.y,0.045,0.01,piece,crackMat,turn);
+            c=c.add(new THREE.Vector2(Math.sin(turn), Math.cos(turn)).multiplyScalar(piece*0.55));
+          }
+          cracks++;
+        }
+      }
+    }
+  }
   function render(data:MapData) {
     city.clear();
     streetSpots.length=0;
+    wearSegs.length=0;
     awnings.length=0;
     shopSigns.length=0;
     dressed.clear();
@@ -518,6 +594,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       const x=-700+i*62,z=365+x*.15;
       box(city,x,.02,z,24,.08,6,lawn);
     }
+    placeWear(city);
     // Batch street furniture and markings: thousands of details, a handful of draws.
     const batches=new Map<THREE.Material,THREE.Mesh[]>();
     for(const child of [...city.children]) {
@@ -603,66 +680,70 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     const rear=wheel.clone(); rear.translate(0,0.12,-0.38);
     return mergeGeometries([deck,stem,bar,front,rear]) ?? deck;
   }
-  function canopyTexture() {
-    const canvas=document.createElement('canvas'); canvas.width=canvas.height=256;
-    const ctx=canvas.getContext('2d')!;
-    ctx.clearRect(0,0,256,256);
-    for(let i=0;i<160;i++) {
-      const x=128+(seeded(i*3)-0.5)*210;
-      const y=128+(seeded(i*5)-0.5)*190;
-      ctx.fillStyle=`rgba(${40+(seeded(i*9)*30)|0},${86+(seeded(i*11)*48)|0},${32+(seeded(i*13)*16)|0},0.9)`;
-      ctx.beginPath();
-      ctx.ellipse(x,y,16+seeded(i*17)*30,8+seeded(i*19)*14,seeded(i*23)*3,0,Math.PI*2);
-      ctx.fill();
+  function liveOakGeometry() {
+    const bark: THREE.BufferGeometry[] = [];
+    const trunk = new THREE.CylinderGeometry(0.42, 0.72, 2.2, 8, 3);
+    trunk.translate(0, 1.1, 0);
+    bark.push(trunk);
+    const limbs: [number, number, number, number, number, number][] = [
+      [0.3, 1.12, 1.75, 3.6, 0.24, 0.07],
+      [1.45, 1.02, 1.9, 4.0, 0.26, 0.08],
+      [2.65, 1.18, 1.65, 3.5, 0.22, 0.07],
+      [3.9, 1.08, 1.95, 3.8, 0.23, 0.07],
+      [5.15, 1.22, 1.6, 3.3, 0.2, 0.06],
+      [0.95, 0.72, 2.35, 2.4, 0.12, 0.045],
+    ];
+    for (const [yaw, pitch, y, len, r0, r1] of limbs) {
+      const geo = new THREE.CylinderGeometry(r1, r0, len, 5, 2);
+      geo.translate(0, len * 0.5, 0);
+      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+      geo.applyMatrix4(new THREE.Matrix4().compose(new THREE.Vector3(0, y, 0), q, new THREE.Vector3(1, 1, 1)));
+      bark.push(geo);
     }
-    const texture=new THREE.CanvasTexture(canvas);
-    texture.colorSpace=THREE.SRGBColorSpace;
-    texture.anisotropy=8;
-    texture.needsUpdate=true;
-    return texture;
+    const crown: THREE.BufferGeometry[] = [];
+    for (let i = 0; i < 58; i++) {
+      const ang = seeded(i * 19) * Math.PI * 2;
+      const rad = Math.pow(seeded(i * 7), 0.5) * 5.1;
+      const lift = Math.sqrt(Math.max(0, 1 - (rad / 5.4) ** 2));
+      const y = 3.2 + lift * 2.35 + (seeded(i * 3) - 0.45) * 0.65;
+      const ico = new THREE.IcosahedronGeometry(0.72 + seeded(i * 11) * 1.05, 1);
+      const color = new THREE.Color().setHSL(0.28 + seeded(i * 13) * 0.06, 0.46, 0.28 + seeded(i * 5) * 0.16);
+      const count = ico.attributes.position.count;
+      const colors = new Float32Array(count * 3);
+      for (let v = 0; v < count; v++) color.toArray(colors, v * 3);
+      ico.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      ico.translate(Math.cos(ang) * rad, y, Math.sin(ang) * rad * 0.88);
+      crown.push(ico);
+    }
+    const barkGeo = mergeGeometries(bark);
+    const crownGeo = mergeGeometries(crown);
+    bark.forEach((geo) => geo.dispose());
+    crown.forEach((geo) => geo.dispose());
+    return { barkGeo, crownGeo };
   }
-  const canopyMap=canopyTexture();
+  const oakGeometry = liveOakGeometry();
   const scooterGeometry=makeScooter();
   const scooterMat=new THREE.MeshStandardMaterial({color:0x2a3134,metalness:0.4,roughness:0.42});
   const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   const dummy = new THREE.Object3D();
   function placeOaks(parent:THREE.Object3D, spots:StreetSpot[], quality:Quality) {
-    if(!spots.length) return;
-    const cards=quality==='low'?5:quality==='medium'?10:quality==='high'?12:14;
-    const trunkGeo=new THREE.CylinderGeometry(0.22,0.42,1,6); trunkGeo.translate(0,0.5,0);
-    const oakLeaf=new THREE.MeshStandardMaterial({map:canopyMap,alphaTest:0.2,side:THREE.DoubleSide,roughness:0.86,color:0xffffff});
-    const trunks=new THREE.InstancedMesh(trunkGeo,trunkMat,spots.length);
-    const leaves=new THREE.InstancedMesh(leafCard,oakLeaf,spots.length*cards);
-    const shade=new THREE.InstancedMesh(new THREE.CircleGeometry(1,12), new THREE.MeshBasicMaterial({color:0x1c2618,transparent:true,opacity:0.32,depthWrite:false}), spots.length);
+    if(!spots.length || !oakGeometry.barkGeo || !oakGeometry.crownGeo) return;
+    const trunks=new THREE.InstancedMesh(oakGeometry.barkGeo, trunkMat, spots.length);
+    const leaves=new THREE.InstancedMesh(oakGeometry.crownGeo, oakLeafMat, spots.length);
     trunks.castShadow=quality!=='low'; trunks.receiveShadow=true; trunks.frustumCulled=false;
-    leaves.castShadow=quality==='high'||quality==='ultra'; leaves.receiveShadow=false; leaves.frustumCulled=false;
-    shade.frustumCulled=false; shade.renderOrder=2;
-    let leafIndex=0;
+    leaves.castShadow=quality!=='low'; leaves.receiveShadow=false; leaves.frustumCulled=false;
     spots.forEach((spot,i)=>{
-      const trunkH=2.15+seeded(spot.seed)*0.7;
-      const crown=5.2+seeded(spot.seed+3)*1.6;
-      dummy.position.set(spot.x,0,spot.z); dummy.rotation.set(0,spot.yaw,0); dummy.scale.set(1,trunkH,1); dummy.updateMatrix();
-      trunks.setMatrixAt(i,dummy.matrix);
-      for(let c=0;c<cards;c++) {
-        const ang=seeded(spot.seed+c*19)*Math.PI*2;
-        const rad=(0.28+seeded(spot.seed+c*7)*0.9)*crown*0.52;
-        dummy.position.set(spot.x+Math.cos(ang)*rad, trunkH+0.55+seeded(spot.seed+c*5)*2.3, spot.z+Math.sin(ang)*rad*0.82);
-        dummy.rotation.set((seeded(spot.seed+c)-0.5)*0.7, ang, (seeded(spot.seed+c*3)-0.5)*0.45);
-        dummy.scale.set(crown*(0.7+seeded(spot.seed+c)*0.22), crown*0.4, 1);
-        dummy.updateMatrix();
-        leaves.setMatrixAt(leafIndex++, dummy.matrix);
-      }
-      dummy.position.set(spot.x,0.175,spot.z);
-      dummy.rotation.set(-Math.PI/2,0,spot.yaw);
-      dummy.scale.set(crown*0.9, crown*0.7, 1);
+      const s=0.86+seeded(spot.seed)*0.42;
+      dummy.position.set(spot.x,0,spot.z);
+      dummy.rotation.set(0, spot.yaw + seeded(spot.seed+4)*0.6, 0);
+      dummy.scale.set(s, s*(0.9+seeded(spot.seed+2)*0.18), s);
       dummy.updateMatrix();
-      shade.setMatrixAt(i, dummy.matrix);
+      trunks.setMatrixAt(i, dummy.matrix);
+      leaves.setMatrixAt(i, dummy.matrix);
     });
     trunks.instanceMatrix.needsUpdate=true;
     leaves.instanceMatrix.needsUpdate=true;
-    shade.instanceMatrix.needsUpdate=true;
     parent.add(trunks, leaves);
-    if(quality==='low'||quality==='medium') parent.add(shade);
   }
   function dress(assets: StreetAssets, quality: Quality): THREE.Object3D[] {
     dressed.clear();
@@ -674,35 +755,19 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     const keep = (spot: StreetSpot, far: number) => spotDist(spot, south) < far * far || spotDist(spot, downtown) < far * far;
     const stride = Math.max(1, Math.round(budget.treeStride / 28));
     const trees = streetSpots.filter((s) => s.kind === 'tree').filter((_, i) => i % stride === 0);
-    const oakCap = quality === 'ultra' ? 56 : quality === 'high' ? 40 : quality === 'medium' ? 28 : 12;
-    const oakRadius = quality === 'low' ? 90 : quality === 'medium' ? 175 : 230;
+    const oakCap = quality === 'ultra' ? 70 : quality === 'high' ? 52 : quality === 'medium' ? 36 : 14;
+    const oakRadius = quality === 'low' ? 110 : quality === 'medium' ? 240 : 320;
     const nearest = (spot: StreetSpot) => Math.min(spotDist(spot, south), spotDist(spot, downtown));
     const oakTrees = trees.filter((spot) => keep(spot, oakRadius)).sort((a, b) => nearest(a) - nearest(b)).slice(0, oakCap);
-    const oakSet = new Set(oakTrees);
-    const coneTrees = trees.filter((spot) => !oakSet.has(spot));
     placeOaks(dressed, oakTrees, quality);
-    const treeScale = assets.propScale('tree', quality);
-    const treeMesh = assets.instanceProp('tree', quality, coneTrees.length);
-    if (treeMesh && treeScale) {
-      coneTrees.forEach((spot, i) => {
-        dummy.position.set(spot.x, treeScale.lift, spot.z);
-        dummy.rotation.set(0, spot.yaw, 0);
-        dummy.scale.setScalar(treeScale.scale * (0.86 + seeded(spot.seed) * 0.32));
-        dummy.updateMatrix();
-        treeMesh.setMatrixAt(i, dummy.matrix);
-      });
-      treeMesh.instanceMatrix.needsUpdate = true;
-      dressed.add(treeMesh);
-    } else if (!treeMesh) {
-      coneTrees.forEach((spot) => tree(dressed, spot.x, spot.z, spot.seed));
-    }
     const instanceKinds: PropKind[] = ['lamp', 'planter', 'pole', 'cone', 'dumpster', 'signal'];
     for (const kind of instanceKinds) {
       const spots = streetSpots.filter((s) => s.kind === kind && keep(s, budget.propFar));
       if (!spots.length) continue;
       const metrics = assets.propScale(kind, quality);
-      const mesh = assets.instanceProp(kind, quality, spots.length);
-      if (mesh && metrics) {
+      const meshes = assets.instanceProp(kind, quality, spots.length);
+      if (!metrics || !meshes.length) continue;
+      for (const mesh of meshes) {
         spots.forEach((spot, i) => {
           dummy.position.set(spot.x, metrics.lift, spot.z);
           dummy.rotation.set(0, spot.yaw, 0);

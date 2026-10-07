@@ -69,24 +69,37 @@ class Mesh:
         self.quad(p[3], p[2], p[6], p[7])
         self.quad(p[4], p[5], p[1], p[0])
 
-    def profile(self, sections):
+    def loft(self, sections, bevel=0.07):
         rings = []
         for z, y0, y1, hx in sections:
+            span = max(0.04, y1 - y0)
+            chamfer = min(bevel, hx * 0.28, span * 0.22)
             rings.append([
-                (-hx, y0, z),
-                (hx, y0, z),
-                (hx, y1, z),
-                (-hx, y1, z),
+                (-hx + chamfer, y0, z),
+                (hx - chamfer, y0, z),
+                (hx, y0 + chamfer, z),
+                (hx, y1 - chamfer, z),
+                (hx - chamfer, y1, z),
+                (-hx + chamfer, y1, z),
+                (-hx, y1 - chamfer, z),
+                (-hx, y0 + chamfer, z),
             ])
         for i in range(len(rings) - 1):
             a, b = rings[i], rings[i + 1]
-            self.quad(a[0], b[0], b[1], a[1])
-            self.quad(a[1], b[1], b[2], a[2])
-            self.quad(a[2], b[2], b[3], a[3])
-            self.quad(a[3], b[3], b[0], a[0])
-        front, rear = rings[-1], rings[0]
-        self.quad(front[0], front[1], front[2], front[3])
-        self.quad(rear[1], rear[0], rear[3], rear[2])
+            count = len(a)
+            for k in range(count):
+                j = (k + 1) % count
+                self.quad(a[k], b[k], b[j], a[j])
+        self._cap(rings[-1], (0.0, 0.0, 1.0))
+        self._cap(rings[0], (0.0, 0.0, -1.0))
+
+    def _cap(self, ring, outward):
+        a, b, c = ring[0], ring[1], ring[2]
+        normal = normalize(cross(sub(b, a), sub(c, a)))
+        if sum(normal[i] * outward[i] for i in range(3)) < 0:
+            ring = list(reversed(ring))
+        for k in range(1, len(ring) - 1):
+            self.face(ring[0], ring[k], ring[k + 1])
 
     def smooth(self, tol=1e-3):
         buckets = {}
@@ -122,95 +135,119 @@ def wheel_nodes(z_front, z_rear, radius, half_track):
     nodes = []
     for x in (-half_track, half_track):
         for z in (z_rear, z_front):
-            mesh = Mesh("wheel", (x, radius, z))
-            mesh.cylinder_x(0, 0, 0, radius, 0.24)
-            nodes.append(mesh)
+            tire = Mesh("wheel", (x, radius, z))
+            tire.cylinder_x(0, 0, 0, radius, 0.22, 20)
+            rim = Mesh("wheel-rim", (x, radius, z))
+            rim.cylinder_x(0, 0, 0, radius * 0.58, 0.24, 14)
+            nodes.extend((tire, rim))
     return nodes
+
+
+def mirrors(body, z, y, hx):
+    body.box(hx + 0.08, y, z, 0.16, 0.08, 0.22)
+    body.box(-(hx + 0.08), y, z, 0.16, 0.08, 0.22)
 
 
 def sedan():
     body = Mesh("body")
-    body.profile([
-        (-2.15, 0.28, 0.62, 0.78),
-        (-1.85, 0.28, 0.92, 0.86),
-        (-1.15, 0.30, 1.12, 0.88),
-        (-0.45, 0.32, 1.42, 0.82),
-        (0.45, 0.32, 1.40, 0.80),
-        (1.05, 0.30, 1.02, 0.86),
-        (1.65, 0.28, 0.78, 0.88),
-        (2.18, 0.28, 0.58, 0.80),
-    ])
+    body.loft([
+        (-2.22, 0.32, 0.58, 0.72),
+        (-2.02, 0.30, 0.82, 0.86),
+        (-1.70, 0.52, 0.98, 0.84),
+        (-1.38, 0.30, 1.08, 0.90),
+        (-0.70, 0.30, 1.22, 0.90),
+        (-0.15, 0.32, 1.42, 0.82),
+        (0.55, 0.32, 1.38, 0.82),
+        (1.05, 0.30, 1.05, 0.88),
+        (1.40, 0.52, 0.90, 0.84),
+        (1.78, 0.28, 0.74, 0.88),
+        (2.12, 0.28, 0.58, 0.80),
+        (2.28, 0.30, 0.48, 0.70),
+    ], 0.075)
+    mirrors(body, 0.35, 0.92, 0.82)
     glass = Mesh("glass")
-    glass.profile([
-        (-0.95, 0.78, 1.28, 0.74),
-        (-0.40, 0.82, 1.34, 0.70),
-        (0.40, 0.82, 1.32, 0.70),
-        (0.95, 0.74, 1.08, 0.74),
-    ])
+    glass.loft([
+        (-0.95, 0.82, 1.30, 0.72),
+        (-0.25, 0.86, 1.38, 0.68),
+        (0.45, 0.84, 1.32, 0.68),
+        (0.95, 0.74, 1.05, 0.72),
+    ], 0.05)
     lamps = Mesh("headlamp")
-    lamps.box(0.62, 0.52, 2.16, 0.34, 0.12, 0.06)
-    lamps.box(-0.62, 0.52, 2.16, 0.34, 0.12, 0.06)
+    lamps.box(0.58, 0.50, 2.24, 0.38, 0.12, 0.05)
+    lamps.box(-0.58, 0.50, 2.24, 0.38, 0.12, 0.05)
     tails = Mesh("taillight")
-    tails.box(0.64, 0.58, -2.14, 0.36, 0.14, 0.05)
-    tails.box(-0.64, 0.58, -2.14, 0.36, 0.14, 0.05)
-    return [body, glass, *wheel_nodes(1.38, -1.38, 0.33, 0.84), lamps, tails]
+    tails.box(0.60, 0.58, -2.20, 0.40, 0.12, 0.04)
+    tails.box(-0.60, 0.58, -2.20, 0.40, 0.12, 0.04)
+    return [body, glass, *wheel_nodes(1.42, -1.42, 0.33, 0.86), lamps, tails]
 
 
 def suv():
     body = Mesh("body")
-    body.profile([
-        (-2.25, 0.32, 0.78, 0.86),
-        (-1.7, 0.32, 1.55, 0.92),
-        (-0.4, 0.34, 1.72, 0.90),
-        (0.7, 0.34, 1.68, 0.88),
-        (1.35, 0.32, 1.15, 0.90),
-        (2.05, 0.32, 0.82, 0.88),
-        (2.28, 0.32, 0.64, 0.82),
-    ])
+    body.loft([
+        (-2.32, 0.36, 0.72, 0.80),
+        (-2.05, 0.34, 1.35, 0.92),
+        (-1.62, 0.58, 1.55, 0.90),
+        (-1.15, 0.34, 1.68, 0.94),
+        (-0.2, 0.36, 1.74, 0.92),
+        (0.75, 0.36, 1.66, 0.90),
+        (1.28, 0.58, 1.22, 0.88),
+        (1.72, 0.34, 0.92, 0.92),
+        (2.15, 0.34, 0.70, 0.86),
+        (2.34, 0.36, 0.58, 0.76),
+    ], 0.08)
+    mirrors(body, 0.55, 1.15, 0.90)
     glass = Mesh("glass")
-    glass.profile([
-        (-1.35, 0.95, 1.58, 0.80),
-        (0.15, 0.98, 1.62, 0.76),
-        (1.15, 0.82, 1.28, 0.78),
-    ])
+    glass.loft([
+        (-1.35, 1.05, 1.58, 0.78),
+        (0.05, 1.08, 1.64, 0.74),
+        (1.05, 0.88, 1.22, 0.76),
+    ], 0.05)
     lamps = Mesh("headlamp")
-    lamps.box(0.66, 0.62, 2.26, 0.36, 0.14, 0.06)
-    lamps.box(-0.66, 0.62, 2.26, 0.36, 0.14, 0.06)
+    lamps.box(0.64, 0.62, 2.30, 0.40, 0.14, 0.05)
+    lamps.box(-0.64, 0.62, 2.30, 0.40, 0.14, 0.05)
     tails = Mesh("taillight")
-    tails.box(0.68, 0.78, -2.24, 0.38, 0.16, 0.05)
-    tails.box(-0.68, 0.78, -2.24, 0.38, 0.16, 0.05)
-    return [body, glass, *wheel_nodes(1.45, -1.45, 0.36, 0.90), lamps, tails]
+    tails.box(0.66, 0.82, -2.28, 0.42, 0.16, 0.04)
+    tails.box(-0.66, 0.82, -2.28, 0.42, 0.16, 0.04)
+    return [body, glass, *wheel_nodes(1.48, -1.48, 0.36, 0.92), lamps, tails]
 
 
 def hatch():
     body = Mesh("body")
-    body.profile([
-        (-1.85, 0.26, 0.70, 0.78),
-        (-1.35, 0.26, 1.28, 0.84),
-        (-0.2, 0.28, 1.38, 0.82),
-        (0.55, 0.28, 1.32, 0.80),
-        (1.15, 0.26, 0.92, 0.84),
-        (1.85, 0.26, 0.58, 0.78),
-    ])
+    body.loft([
+        (-1.92, 0.30, 0.62, 0.72),
+        (-1.62, 0.28, 1.15, 0.84),
+        (-1.22, 0.50, 1.28, 0.82),
+        (-0.55, 0.28, 1.40, 0.86),
+        (0.35, 0.28, 1.34, 0.82),
+        (0.85, 0.50, 1.02, 0.80),
+        (1.28, 0.26, 0.78, 0.84),
+        (1.78, 0.26, 0.55, 0.78),
+        (1.94, 0.28, 0.46, 0.68),
+    ], 0.065)
+    mirrors(body, 0.25, 0.88, 0.80)
     glass = Mesh("glass")
-    glass.profile([
-        (-1.15, 0.78, 1.22, 0.72),
-        (0.15, 0.80, 1.26, 0.68),
-        (0.85, 0.70, 1.02, 0.70),
-    ])
+    glass.loft([
+        (-1.15, 0.82, 1.24, 0.70),
+        (0.05, 0.86, 1.30, 0.66),
+        (0.75, 0.72, 1.02, 0.68),
+    ], 0.045)
     lamps = Mesh("headlamp")
-    lamps.box(0.58, 0.48, 1.84, 0.30, 0.11, 0.05)
-    lamps.box(-0.58, 0.48, 1.84, 0.30, 0.11, 0.05)
+    lamps.box(0.54, 0.48, 1.90, 0.32, 0.11, 0.04)
+    lamps.box(-0.54, 0.48, 1.90, 0.32, 0.11, 0.04)
     tails = Mesh("taillight")
-    tails.box(0.60, 0.62, -1.84, 0.32, 0.12, 0.05)
-    tails.box(-0.60, 0.62, -1.84, 0.32, 0.12, 0.05)
-    return [body, glass, *wheel_nodes(1.15, -1.15, 0.31, 0.80), lamps, tails]
+    tails.box(0.56, 0.64, -1.90, 0.34, 0.12, 0.04)
+    tails.box(-0.56, 0.64, -1.90, 0.34, 0.12, 0.04)
+    return [body, glass, *wheel_nodes(1.18, -1.18, 0.31, 0.82), lamps, tails]
 
 
 MATERIALS = {
-    "body": {"pbrMetallicRoughness": {"baseColorFactor": [0.75, 0.75, 0.75, 1], "metallicFactor": 0.55, "roughnessFactor": 0.32}},
+    "body": {
+        "pbrMetallicRoughness": {"baseColorFactor": [0.75, 0.75, 0.75, 1], "metallicFactor": 0.65, "roughnessFactor": 0.24},
+        "extensions": {"KHR_materials_clearcoat": {"clearcoatFactor": 0.88, "clearcoatRoughnessFactor": 0.14}},
+    },
     "glass": {"pbrMetallicRoughness": {"baseColorFactor": [0.12, 0.16, 0.18, 1], "metallicFactor": 0.45, "roughnessFactor": 0.06}},
     "wheel": {"pbrMetallicRoughness": {"baseColorFactor": [0.04, 0.04, 0.04, 1], "metallicFactor": 0.0, "roughnessFactor": 0.92}},
+    "wheel-rim": {"pbrMetallicRoughness": {"baseColorFactor": [0.62, 0.64, 0.66, 1], "metallicFactor": 0.9, "roughnessFactor": 0.22}},
     "headlamp": {
         "pbrMetallicRoughness": {"baseColorFactor": [1, 0.97, 0.9, 1], "metallicFactor": 0.0, "roughnessFactor": 0.2},
         "emissiveFactor": [1.0, 0.95, 0.82],
@@ -280,6 +317,7 @@ def pack(meshes):
 
     gltf = {
         "asset": {"version": "2.0", "generator": "tools/traffic_cars.py"},
+        "extensionsUsed": ["KHR_materials_clearcoat"],
         "scene": 0,
         "scenes": [{"nodes": used}],
         "nodes": nodes,

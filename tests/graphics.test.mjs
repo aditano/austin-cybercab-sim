@@ -107,4 +107,10 @@ test('bundled street models and licenses are recorded', () => {
   const lighting = fs.readFileSync(new URL('../src/lighting.ts', import.meta.url), 'utf8');
   assert.match(lighting, /mat\.envMap = map/);
   assert.doesNotMatch(lighting, /if \(map\) mat\.envMap = map/);
+  const assets = fs.readFileSync(new URL('../src/assets.ts', import.meta.url), 'utf8');
+  assert.match(assets, /geo\.applyMatrix4\(obj\.matrixWorld\)/);
+  assert.match(assets, /people\/michelle\.glb/);
+  assert.ok(fs.existsSync(new URL('../public/models/people/michelle.glb', import.meta.url)));
+  assert.ok(fs.existsSync(new URL('../public/models/people/civilian.glb', import.meta.url)));
+  assert.ok(fs.existsSync(new URL('../public/textures/kloofendal_overcast_puresky_1k.hdr', import.meta.url)));
 });

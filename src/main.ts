@@ -71,23 +71,24 @@ renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate = false;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 1.18;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.localClippingEnabled = true;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color('#efe0c8');
-scene.fog = new THREE.FogExp2('#e4d2b8', 0.00135);
+scene.background = new THREE.Color('#d5dee6');
+scene.fog = new THREE.FogExp2('#d5dee6', 0.00072);
 const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.15, 3200);
 
 const sky = new Sky();
 sky.scale.setScalar(45000);
+sky.visible = false;
 const su = sky.material.uniforms;
 su.turbidity.value = 4.6;
 su.rayleigh.value = 2.1;
 su.mieCoefficient.value = 0.008;
 su.mieDirectionalG.value = 0.82;
-const sunPosition = new THREE.Vector3(-0.62, 0.22, 0.48);
+const sunPosition = new THREE.Vector3(0.22, 0.86, 0.32);
 const sunOffset = sunPosition.clone().normalize().multiplyScalar(280);
 su.sunPosition.value.copy(sunPosition);
 scene.add(sky);
@@ -97,8 +98,8 @@ const skyEnv = pmrem.fromScene(sky as unknown as THREE.Scene, 0.03).texture;
 scene.environment = skyEnv;
 scene.environmentIntensity = 0.95;
 
-scene.add(new THREE.HemisphereLight('#ffe4c4', '#6a5848', 0.42));
-const sun = new THREE.DirectionalLight('#ffd2a2', 2.55);
+scene.add(new THREE.HemisphereLight('#e7eef4', '#8d887c', 0.55));
+const sun = new THREE.DirectionalLight('#f4f6f8', 2.15);
 sun.position.copy(sunOffset);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024, 1024);
@@ -191,10 +192,10 @@ const gradePass = new ShaderPass({
     void main(){
       vec3 c=texture2D(tDiffuse,vUv).rgb;
       float l=dot(c,vec3(0.2126,0.7152,0.0722));
-      c=mix(vec3(l),c,1.12);
-      c.r+=0.012*(c.r-0.4);
-      c.b+=0.012*(0.5-l);
-      c=pow(max(c,0.0),vec3(0.98));
+      c=mix(vec3(l),c,1.04);
+      c.r+=0.004*(c.r-0.45);
+      c.b+=0.018*(0.55-l);
+      c=pow(max(c,0.0),vec3(0.96));
       gl_FragColor=vec4(c,1.0);
     }`,
 });
@@ -1225,10 +1226,11 @@ stickEl?.addEventListener('pointercancel', endStick);
 
 void Promise.all([
   loadCybercab(),
-  new HDRLoader().loadAsync(`${import.meta.env.BASE_URL}textures/kloofendal_48d_partly_cloudy_puresky_1k.hdr`).then((hdri) => {
+  new HDRLoader().loadAsync(`${import.meta.env.BASE_URL}textures/kloofendal_overcast_puresky_1k.hdr`).then((hdri) => {
     hdri.mapping = THREE.EquirectangularReflectionMapping;
+    scene.background = hdri;
+    scene.backgroundIntensity = 1.28;
     const env = pmrem.fromEquirectangular(hdri).texture;
-    hdri.dispose();
     const previous = scene.environment;
     scene.environment = env;
     if (previous && previous !== env) previous.dispose();
