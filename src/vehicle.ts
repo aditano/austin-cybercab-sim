@@ -151,7 +151,6 @@ export async function loadCybercab() {
   const tealMesh = meshesUnder(lamps.find((seg) => seg.kind === 'teal')?.node ?? group)[0];
   if (!tealMesh) throw new Error('Cybercab is missing the teal pickup bar');
   const tealMat = cloneStandard(tealMesh, 'lamp-front-teal');
-  const tealColor = tealMat.emissive.clone();
   tealMat.emissiveIntensity = 2.2;
   tealMat.toneMapped = false;
   for (const seg of lamps) {
@@ -163,15 +162,16 @@ export async function loadCybercab() {
   const rearTurnMesh = meshesUnder(lamps.find((seg) => seg.kind === 'rear-turn')?.node ?? group)[0];
   const brakeMesh = meshesUnder(lamps.find((seg) => seg.kind === 'brake')?.node ?? group)[0];
   if (!frontTurnMesh || !rearTurnMesh || !brakeMesh) throw new Error('Cybercab is missing turn or brake segments');
-  const frontTurnMat = cloneStandard(frontTurnMesh, 'lamp-turn-amber');
+  const frontTurnMat = cloneStandard(frontTurnMesh, 'lamp-turn-front');
+  frontTurnMat.color.setHex(0xffffff);
+  frontTurnMat.emissive.setHex(0xffffff);
   frontTurnMat.emissiveIntensity = 8;
   frontTurnMat.toneMapped = false;
   const rearTurnMat = cloneStandard(rearTurnMesh, 'lamp-turn-rear');
-  // The real outer blink is red and disappears on a lit tail in daylight.
-  // Hide the tail underneath and flash these ends amber so the signal reads.
-  rearTurnMat.color.setHex(0xff7a12);
-  rearTurnMat.emissive.setHex(0xff8a1e);
-  rearTurnMat.emissiveIntensity = 7;
+  // Rear outer ends blink red, the color measured on the We, Robot show car.
+  rearTurnMat.color.setHex(0xff1a10);
+  rearTurnMat.emissive.setHex(0xff1208);
+  rearTurnMat.emissiveIntensity = 8;
   rearTurnMat.toneMapped = false;
   const brakeMat = cloneStandard(brakeMesh, 'lamp-brake');
   brakeMat.emissiveIntensity = 6;
@@ -307,6 +307,7 @@ export async function loadCybercab() {
   let tealLevel = 0;
   let brakeLevel = 0;
   let turnLevel = 0;
+  let megalampOn = false;
 
   function runningScale(kind: 'front' | 'rear', index: number): number {
     if (wakeElapsed < 0) return 1;
@@ -316,8 +317,10 @@ export async function loadCybercab() {
   function applyLights(signals: VehicleSignals, brake: boolean) {
     const match = signals.match || lampMode === 'match';
     const hazard = signals.hazard || hazardsOn;
+    // The rider guide assigns one front-bar color for the ride. It stays on from the approach through the curb.
+    const identify = match || signals.pickup;
     const reveal = wakeElapsed >= 0 && wakeElapsed < 0.85 && !signals.pickup ? THREE.MathUtils.clamp(wakeElapsed / 0.7, 0, 1) : 1;
-    if (match && !signals.pickup) {
+    if (identify) {
       frontMat.color.setHex(MEGALAMP.color);
       frontMat.emissive.setHex(MEGALAMP.color);
       frontMat.emissiveIntensity = 3.6;
@@ -330,7 +333,9 @@ export async function loadCybercab() {
       frontMat.toneMapped = true;
       glowColor.setHex(0xffffff);
     }
-    if (signals.pickup) glowColor.copy(tealColor);
+    frontTurnMat.color.copy(frontMat.color);
+    frontTurnMat.emissive.copy(frontMat.emissive);
+    frontTurnMat.emissiveIntensity = identify ? 6.5 : 8;
     lampLight.color.copy(glowColor);
     if (brake) {
       rearMat.color.setRGB(1, 0.015, 0.008);
@@ -343,26 +348,26 @@ export async function loadCybercab() {
       rearMat.emissiveIntensity = rearRest;
       rearMat.toneMapped = true;
     }
-    lampLight.intensity = (signals.pickup ? 0.04 : match ? 0.08 : 0.04) * reveal;
+    lampLight.intensity = (identify ? 0.08 : 0.04) * reveal;
     tealLevel = 0;
     brakeLevel = 0;
     turnLevel = 0;
+    megalampOn = identify;
     for (const seg of lamps) {
       const flash = lastBlink && (hazard || sideAsked(signals.turn, seg.side));
       switch (seg.kind) {
         case 'front':
         case 'rear': {
-          let scale = seg.kind === 'front' && signals.pickup ? LAMP_OFF : runningScale(seg.kind, seg.index);
-          if (flash && seg.kind === 'rear' && seg.index >= 4) scale = Math.min(scale, 0.15);
-          else if (flash && seg.kind === 'rear') scale = Math.min(scale, 0.16);
+          let scale = runningScale(seg.kind, seg.index);
+          if (flash && seg.index >= 4) scale = Math.min(scale, 0.12);
+          else if (flash) scale = Math.min(scale, 0.2);
           if (seg.kind === 'rear' && brake && !(flash && seg.index >= 4)) seg.node.scale.set(1, 2.2, 1);
           else seg.node.scale.setScalar(scale);
           break;
         }
         case 'teal': {
-          const on = signals.pickup && !(flash && seg.index >= 4);
-          seg.node.scale.setScalar(on ? 1 : LAMP_OFF);
-          if (on) tealLevel = 1;
+          // Aqua was one observed Megalamp color. This ride's app color is painted on the base bar.
+          seg.node.scale.setScalar(LAMP_OFF);
           break;
         }
         case 'front-turn':
@@ -433,6 +438,7 @@ export async function loadCybercab() {
         blink: lastBlink,
         wake: wakeElapsed >= 0,
         teal: tealLevel,
+        megalamp: megalampOn,
         brakeLamp: brakeLevel > 0,
         turnLamp: turnLevel > 0,
       };

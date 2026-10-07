@@ -68,6 +68,14 @@ Environment images are [CC0](https://polyhaven.com/license) from [Poly Haven](ht
 
 Map data © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright), available under the [Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/1-0/). The adapted map database in `public/data/austin.json` remains under ODbL. Preserve its attribution and source metadata when redistributing it; the application's code license does not replace the map-data license.
 
+## License
+
+Copyright 2026 Anthony DiTano.
+
+This project is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version. The license identifier is `GPL-3.0-or-later`. The full text is in [LICENSE](LICENSE).
+
+Third-party assets documented in [docs/ASSETS.md](docs/ASSETS.md) keep their own licenses. That file covers the Kenney, Mixamo, and Poly Haven models. The OpenStreetMap extract described above stays under the Open Database License.
+
 ## Project commands
 
 - `npm run dev` — start the Vite development server.

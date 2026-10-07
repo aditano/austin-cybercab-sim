@@ -9,7 +9,7 @@ Tesla's [Cybercab FAQ](https://www.tesla.com/support/robotaxi/cybercab) and [Rob
 1. Open the Robotaxi app and enter a destination **within the displayed service area**.
 2. Review estimated fare and wait, then confirm.
 3. Match the assigned vehicle (plate) and, for Cybercab, the **front lightbar / Megalamp color** shown in the app.
-4. At pickup the rear lightbar is red and hazards flash while parked. This sim shows the violet match color on the front bar while the car is on the way, then a teal front bar at the curb. A door can open when the requester's phone is detected.
+4. At pickup the rear lightbar is red and hazards flash while parked. This sim keeps the violet match color on the front bar from the approach through boarding, the same color the app shows. A door can open when the requester's phone is detected.
 5. Buckle up; the door closes after buckling. With doors/trunk closed, tap **Start Ride** on the touchscreen or in the app.
 6. During the trip the cabin screen shows progress, climate, and media. Support / pull-over are available.
 7. At drop-off the vehicle parks and flashes hazards; open a door, exit, complete the trip in the app.
@@ -18,7 +18,7 @@ Both Cybercab and Model Y belong to the service; this simulator always assigns C
 
 ## Megalamp (pickup identification)
 
-On 1 October 2026 Tesla's Robotaxi account named the Cybercab RGB front lightbar the **Megalamp**. The rider guide already described front lightbar color changes during pickup. The app shows the assigned color; the vehicle glows the same color so riders can find the correct car when several gold Cybercabs are at the curb. This project uses a violet match color (`#c24bff`) in the phone UI and on the front bar while the cab is approaching. At the curb and while boarding, the front bar switches to teal and the hazards flash. Turn signals use the outer ends of the bars; brake lights come on while slowing.
+On 1 October 2026 Tesla's Robotaxi account named the Cybercab RGB front lightbar the **Megalamp**. The rider guide says that during pickup the rear lightbar is red and the front lightbar changes to the color shown in the app, and that the lightbars flash hazards when the car is parked for pickup or drop-off. This project uses one violet match color (`#c24bff`) in the phone UI and on the front bar from the approach through boarding. Aqua and teal seen on other cars are other assigned colors, not a second curb-only state. Turn signals blink the outer ends of each bar in that bar's own color (rear red, front white or the match color). Brake lights brighten the full rear bar while slowing. Sources and the guesses that stayed are in `tools/cybercab/lights.md`.
 
 ## Austin geofence (approximate)
 

@@ -70,7 +70,8 @@ assert.ok(picked.doorSpan > 1.2 && picked.doorSpan < 2.8, `open door span explod
 assert.ok(picked.doorTop > closed.doorTop + 0.04, `door did not rise (${closed.doorTop} -> ${picked.doorTop})`);
 assert.equal(picked.lights.pickup, true);
 assert.equal(picked.lights.hazard, true);
-assert.ok(picked.lights.teal > 0.8, `pickup bar was not teal (${picked.lights.teal})`);
+assert.equal(picked.lights.megalamp, true);
+assert.equal(picked.lights.teal, 0);
 await click('#cancel');
 assert.equal((await state()).phase, 'explore');
 
