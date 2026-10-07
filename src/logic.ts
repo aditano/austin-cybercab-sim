@@ -46,7 +46,7 @@ export const QUALITY_ORDER: readonly Quality[] = ['low', 'medium', 'high', 'ultr
 
 export const PRESET_GRAPHICS: Record<Quality, GraphicsToggles> = {
   low: { pixelScale: 1, shadows: false, shadowSize: 0, cascades: 0, reflections: 'ibl', lod: 'near', aa: false, post: false, textures: 'low' },
-  medium: { pixelScale: 1.25, shadows: true, shadowSize: 1024, cascades: 2, reflections: 'ibl', lod: 'mid', aa: true, post: false, textures: 'high' },
+  medium: { pixelScale: 1.25, shadows: true, shadowSize: 1024, cascades: 2, reflections: 'ibl', lod: 'mid', aa: true, post: true, textures: 'high' },
   high: { pixelScale: 1.5, shadows: true, shadowSize: 2048, cascades: 3, reflections: 'probe', lod: 'far', aa: true, post: true, textures: 'high' },
   ultra: { pixelScale: 1.75, shadows: true, shadowSize: 2048, cascades: 4, reflections: 'ssr', lod: 'far', aa: true, post: true, textures: 'high' },
 };
@@ -104,11 +104,24 @@ export function pointInRing(lon: number, lat: number, ring: readonly (readonly [
   return inside;
 }
 
+/**
+ * Seated eye in glTF space (Y up, nose −Z). The dash tops out near y = 0.85,
+ * so the look point clears the dash (about y = 0.85) and goes out the windshield.
+ */
+export const CABIN_EYE = { x: 0, y: 1.02, z: 0.18 } as const;
+export const CABIN_LOOK = { x: 0, y: 0.78, z: -8 } as const;
+
 /** The curb door opens once the cab has stopped, and stays open until the rider buckles. */
 export function doorTarget(phase: string, _elapsed: number, belted: boolean, doorRequested: boolean, atCurb = false): number {
   if (phase === 'pickup' || (phase === 'boarded' && !belted) || (phase === 'dispatch' && atCurb)) return 1;
   if ((phase === 'arrived' || phase === 'exited') && doorRequested) return 1;
   return 0;
+}
+
+/** Drop a stale "open the door" request when the rider is not at a curb stop. */
+export function keepDoorRequest(phase: string, requested: boolean): boolean {
+  if (phase === 'ride' || phase === 'explore' || phase === 'dispatch' || phase === 'complete') return false;
+  return requested;
 }
 
 /** Linear stroke. Reduced motion snaps. Closing from open takes DOOR_STROKE_S. */
@@ -393,7 +406,7 @@ export type PedState = { crossing: boolean; t: number; dist: number };
 
 export function stepPedestrian(
   state: PedState,
-  input: { dt: number; cabDist: number; red: boolean; nearCross: boolean; wantStart: boolean; routeLength: number },
+  input: { dt: number; cabDist: number; red: boolean; nearCross: boolean; wantStart: boolean; routeLength: number; direction?: 1 | -1 },
 ): PedState & { sideFlip: boolean } {
   let crossing = state.crossing;
   let t = state.t;
@@ -419,8 +432,10 @@ export function stepPedestrian(
       }
     }
   } else {
-    dist += 1.15 * input.dt;
-    if (dist > input.routeLength - 8) dist = 8;
+    const direction = input.direction === -1 ? -1 : 1;
+    dist += 1.15 * input.dt * direction;
+    if (direction > 0 && dist > input.routeLength - 8) dist = 8;
+    if (direction < 0 && dist < 8) dist = input.routeLength - 8;
   }
   return { crossing, t, dist, sideFlip };
 }
@@ -461,4 +476,59 @@ export function parseSnapshot(raw: string | null): RideSnapshot | null {
 
 export function snapshotKey(phase: string): boolean {
   return isPhase(phase);
+}
+
+/** Phone copy while the cab is still driving to the curb. */
+export function arrivalCopy(meters: number): string {
+  if (meters < 8) return 'At the curb';
+  if (meters < 40) return 'Arriving now';
+  return `${Math.max(1, Math.round(meters))} m away`;
+}
+
+/** Road-noise level from speed. Silent when stopped, capped so it stays under the UI. */
+export function roadLevel(speed: number): number {
+  const moving = Math.max(0, speed);
+  return Math.min(0.04, (moving / 13.4) * 0.032);
+}
+
+export function signalOffset(index: number): number {
+  return Math.max(0, index) * 7;
+}
+
+export function npcHeading(routeHeading: number, against: boolean): number {
+  return against ? routeHeading + Math.PI : routeHeading;
+}
+
+export type TrafficStep = {
+  dist: number;
+  speed: number;
+  dt: number;
+  against: boolean;
+  routeLength: number;
+  cabDist: number;
+};
+
+/** Advance one NPC. With-traffic cars wrap to the south; oncoming cars wrap to the north, clear of the cab. */
+export function stepTrafficDist(input: TrafficStep): number {
+  const dir = input.against ? -1 : 1;
+  let dist = input.dist + dir * Math.max(0, input.speed) * Math.max(0, input.dt);
+  const span = Math.max(20, input.routeLength);
+  if (!input.against && dist > span + 30) {
+    dist = 10;
+    if (Math.abs(dist - input.cabDist) < 18) dist = Math.max(8, input.cabDist - 24);
+  }
+  if (input.against && dist < -10) {
+    dist = span - 12;
+    if (Math.abs(dist - input.cabDist) < 18) dist = Math.min(span - 8, input.cabDist + 24);
+  }
+  return dist;
+}
+
+/** Brake and pull away over time instead of snapping to a full stop. */
+export function easeVehicleSpeed(current: number, target: number, dt: number): number {
+  const goal = Math.max(0, target);
+  const rate = goal + 0.2 >= current ? 3.4 : 8;
+  const step = Math.min(rate * Math.max(0, dt), Math.abs(goal - current));
+  if (step === 0) return current;
+  return current + Math.sign(goal - current) * step;
 }

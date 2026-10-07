@@ -6,6 +6,7 @@ import type { Quality } from './logic';
 
 export type StreetKind = 'sedan' | 'sedan-sports' | 'suv' | 'suv-luxury' | 'van' | 'pickup' | 'taxi' | 'police' | 'hatch';
 export type PropKind = 'lamp' | 'hydrant' | 'bench' | 'trash' | 'planter' | 'tree' | 'cone' | 'dumpster' | 'stop' | 'street-sign' | 'warn' | 'signal' | 'pole';
+export type HeroKind = 'facade' | 'escape' | 'shrub';
 
 type PropId =
   | 'lamp-hi' | 'lamp-lo' | 'hydrant' | 'bench' | 'trash' | 'planter-hi' | 'planter-lo'
@@ -49,6 +50,12 @@ const PROP_FILES: Record<PropId, string> = {
   warn: 'props/road-sign-warning.glb',
   signal: 'props/traffic-light.glb',
   pole: 'props/electricity-pole.glb',
+};
+
+const HERO_FILES: Record<HeroKind, string> = {
+  facade: 'props/facade-apartments.glb',
+  escape: 'props/fire-escape.glb',
+  shrub: 'props/shrub.glb',
 };
 
 const PEOPLE = [
@@ -139,6 +146,8 @@ export type SpawnedPerson = {
 export type StreetAssets = {
   spawnCar(kind: StreetKind, paint: number): THREE.Group;
   spawnProp(kind: PropKind, quality: Quality): THREE.Object3D | null;
+  spawnHero(kind: HeroKind, scale?: number): THREE.Object3D | null;
+  ensureHeroes(): Promise<void>;
   instanceProp(kind: PropKind, quality: Quality, count: number): THREE.InstancedMesh | null;
   propScale(kind: PropKind, quality: Quality): { scale: number; lift: number } | null;
   spawnPerson(seed: number, quality: Quality): SpawnedPerson | null;
@@ -151,6 +160,8 @@ export function createStreetAssets(): StreetAssets {
   loader.setMeshoptDecoder(MeshoptDecoder);
   const cars = new Map<StreetKind, Template>();
   const props = new Map<PropId, Template>();
+  const heroes = new Map<HeroKind, Template>();
+  let heroPromise: Promise<void> | null = null;
   const people: { id: string; template: Template; walk: string; idle: string }[] = [];
   const collected: THREE.Material[] = [];
 
@@ -213,11 +224,17 @@ export function createStreetAssets(): StreetAssets {
         if (!/^body$/i.test(obj.name)) return;
         const src = Array.isArray(obj.material) ? obj.material[0] : obj.material;
         if (src instanceof THREE.MeshStandardMaterial || src instanceof THREE.MeshPhysicalMaterial) {
-          const mat = src.clone();
-          mat.color.setHex(paint);
-          mat.metalness = Math.max(mat.metalness, 0.42);
-          mat.roughness = Math.min(mat.roughness, 0.38);
-          mat.envMapIntensity = 1.4;
+          const mat = new THREE.MeshPhysicalMaterial({
+            map: src.map,
+            normalMap: src.normalMap,
+            roughnessMap: src.roughnessMap,
+            color: paint,
+            metalness: 0.62,
+            roughness: 0.28,
+            clearcoat: 0.72,
+            clearcoatRoughness: 0.22,
+            envMapIntensity: 1.55,
+          });
           obj.material = mat;
           collected.push(mat);
         }
@@ -228,6 +245,23 @@ export function createStreetAssets(): StreetAssets {
         if (/wheel/i.test(obj.name)) group.userData.wheels.push(obj);
       });
       return group;
+    },
+    ensureHeroes() {
+      if (!heroPromise) {
+        heroPromise = Promise.all((Object.keys(HERO_FILES) as HeroKind[]).map(async (id) => {
+          heroes.set(id, await loadOne(HERO_FILES[id]));
+        })).then(() => undefined);
+      }
+      return heroPromise;
+    },
+    spawnHero(kind, scale = 1) {
+      const template = heroes.get(kind);
+      if (!template) return null;
+      const model = cloneTemplate(template, true);
+      model.scale.setScalar(scale);
+      sitOnGround(model);
+      model.userData.hero = kind;
+      return model;
     },
     spawnProp(kind, quality) {
       const resolved = templateFor(kind, quality);

@@ -17,7 +17,7 @@ import {
   PICKUP, ROAD_Y, STOP_INSET, VEHICLE_LABEL, VEHICLE_PLATE, measurePath, pointInRing, project, samplePath,
 } from './geo';
 import {
-  DESTINATIONS, GRAPHICS_KEY, QUALITY_LABEL, adaptQuality, blockedSpeed, doorTarget, showContactDisc,
+  CABIN_EYE, CABIN_LOOK, DESTINATIONS, GRAPHICS_KEY, QUALITY_LABEL, adaptQuality, arrivalCopy, blockedSpeed, doorTarget, keepDoorRequest, roadLevel, showContactDisc,
   emptyAdaptState, forcedQuality, graphicsFor, parseGraphicsStore, parseSnapshot, pixelRatioFor, resolvedQuality,
   stepDoor, togglePhone, type GraphicsToggles, type Quality, type QualityMode, type RideSnapshot,
 } from './logic';
@@ -41,7 +41,7 @@ app.innerHTML = `<canvas id="scene"></canvas><div class="vignette"></div>
 <aside class="chapter"><span class="eyebrow">CONGRESS AVENUE · AUSTIN</span><h1>Golden hour<br>on Congress.</h1><p>The Capitol closes the avenue.<br>Lady Bird Lake is behind you.<br>Match the Megalamp, then ride.</p><div class="chapter-line"></div><span class="small-label">01 / CONFIRM YOUR RIDE</span></aside>
 <div class="location"><span class="location-dot">⌖</span><div><b id="location-name">Congress & 2nd</b><span id="location-detail">DOWNTOWN · CAPITOL NORTH · LAKE SOUTH</span></div></div>
 <div class="hud"><div class="speedo"><b id="speed">00</b><small>MPH</small><span id="gear">P</span></div></div>
-<aside id="phone" class="phone"><div class="phone-top"><b>6:42</b><div class="island"></div><span>▥ ▰</span></div><div class="phone-content"><div class="app-brand">ROBOTAXI <span>✦</span></div><div id="phone-body"></div></div><div class="home-bar"></div></aside>
+<aside id="phone" class="phone"><div id="phone-map" class="phone-map"></div><div class="phone-top"><b class="js-clock">6:42</b><div class="island"></div><span>5G</span></div><div class="sheet"><div class="sheet-handle"></div><div class="app-bar"><span class="avatar" aria-hidden="true"></span><b>ROBOTAXI</b><button id="alerts" type="button" class="bell" aria-label="Alerts"></button></div><div id="phone-body"></div><div id="phone-actions"></div></div><div class="home-bar"></div></aside>
 <section id="cabin" class="cabin-panel" hidden></section>
 <div id="toast" role="status"></div>
 <footer><div class="controls"><span><kbd>DRAG</kbd> Look</span><span><kbd>W A S D</kbd> Walk</span><span><kbd>C</kbd> Camera</span><span><kbd>P</kbd> Phone</span><span><kbd>F</kbd> Fullscreen</span></div><div class="concept">INDEPENDENT CONCEPT SIMULATION <span>·</span> <a href="https://www.openstreetmap.org/copyright" target="_blank">© OpenStreetMap</a><a href="./docs.html" target="_blank">Sources & accuracy ↗</a></div></footer>
@@ -147,7 +147,8 @@ scene.add(padGlow);
 
 const life = createCityLife(scene, route, cumulative, routeLength);
 
-function restyleWorld() {
+async function restyleWorld() {
+  if (quality !== 'low') await assets.ensureHeroes();
   const parked = world.dress(assets, quality);
   life.populate(assets, quality);
   lighting.hookObject(scene);
@@ -200,6 +201,15 @@ let speedMps = 0;
 let cam: Cam = 'walk';
 let mapOverview = true;
 let doorRequested = false;
+let clockMinutes = 18 * 60 + 42;
+let clockShown = '6:42';
+function clockLabel() {
+  const wrapped = ((Math.floor(clockMinutes) % (24 * 60)) + 24 * 60) % (24 * 60);
+  const hour24 = Math.floor(wrapped / 60);
+  const minute = wrapped % 60;
+  const hour = hour24 % 12 || 12;
+  return `${hour}:${String(minute).padStart(2, '0')}`;
+}
 let hold = 0;
 let curbState = 0;
 let appliedCurb = 0;
@@ -220,7 +230,7 @@ const hardware = {
 };
 let qualityMode: QualityMode = forcedPreset ?? storedGraphics?.mode ?? 'auto';
 let graphicsOverrides: Partial<GraphicsToggles> | undefined = storedGraphics?.overrides;
-let quality: Quality = forcedPreset ?? (softwareGl ? 'low' : resolvedQuality(qualityMode, hardware));
+let quality: Quality = forcedPreset ?? (lockSoftware ? 'low' : resolvedQuality(qualityMode, hardware));
 let graphics = graphicsFor(quality, graphicsOverrides);
 let adaptState = emptyAdaptState();
 let stickX = 0;
@@ -239,6 +249,8 @@ let last = performance.now();
 const keys = new Set<string>();
 const phone = document.querySelector<HTMLElement>('#phone')!;
 const body = document.querySelector<HTMLElement>('#phone-body')!;
+const phoneActions = document.querySelector<HTMLElement>('#phone-actions')!;
+const phoneMap = document.querySelector<HTMLElement>('#phone-map')!;
 const cabin = document.querySelector<HTMLElement>('#cabin')!;
 let mapFeatures = '';
 function mapPoint(v: THREE.Vector3, overview = false) {
@@ -252,8 +264,8 @@ void loadMapData().then(data => {
     const [x, y] = mapPoint(project(lon, lat));
     return `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
-  mapFeatures = data.buildings.map((b: { coordinates: number[][] }) => `<path d="${path(b.coordinates)}Z" fill="#d4ddd0"/>`).join('')
-    + data.roads.map((r: { coordinates: number[][] }) => `<path d="${path(r.coordinates)}" fill="none" stroke="#f7f8f4" stroke-width="3"/>`).join('');
+  mapFeatures = data.buildings.map((b: { coordinates: number[][] }) => `<path d="${path(b.coordinates)}Z" fill="#e4dfd6"/>`).join('')
+    + data.roads.map((r: { coordinates: number[][] }) => `<path d="${path(r.coordinates)}" fill="none" stroke="#ffffff" stroke-width="3.2"/>`).join('');
   if (uiReady) renderUI();
 }).catch(() => toast('Map unavailable. Showing the bundled route.'));
 
@@ -264,22 +276,29 @@ function geofencePath() {
   }).join(' ') + 'Z';
 }
 
+function mapIsOverview() {
+  return phase !== 'explore' && mapOverview;
+}
+
 function mapMarkup(progress = 0) {
-  const overview = mapOverview || phase === 'explore';
+  const overview = mapIsOverview();
   const line = route.map((v, i) => {
     const [x, y] = mapPoint(v, overview);
     return `${i ? 'L' : 'M'}${x},${y}`;
   }).join(' ');
   const along = pickupDist + progress * (dropoffDist - pickupDist);
   const [px, py] = mapPoint(sample(along).position, overview);
+  const [sx, sy] = mapPoint(sample(pickupDist).position, overview);
   const [ex, ey] = mapPoint(sample(dropoffDist).position, overview);
-  return `<div class="map"><svg viewBox="0 0 280 245"><rect width="280" height="245" fill="#e6ebe3"/>
-    <path d="${geofencePath()}" fill="#3d6b5228" stroke="#2f5a44" stroke-width="${overview ? 2 : 0.6}" stroke-dasharray="4 3"/>
-    ${overview ? '' : mapFeatures}<path d="${line}" stroke="#283d2e" stroke-width="${overview ? 2 : 4}" fill="none" stroke-linecap="round"/>
-    <circle cx="${ex}" cy="${ey}" r="7" fill="#283d2e" stroke="white" stroke-width="3"/>
-    <circle data-cab="1" cx="${px}" cy="${py}" r="8" fill="${MEGALAMP.hex}" stroke="white" stroke-width="3"/>
-    <text x="18" y="22">${overview ? 'AUSTIN SERVICE AREA' : 'CONGRESS AVE'}</text></svg>
-    <span class="map-pin">AUSTIN · N ↑</span>
+  const showRoute = phase !== 'explore';
+  return `<div class="map"><svg viewBox="0 0 280 245"><rect width="280" height="245" fill="#efeae2"/>
+    <path d="${geofencePath()}" fill="none" stroke="#c8c2b8" stroke-width="${overview ? 1.2 : 0}" stroke-dasharray="3 3"/>
+    ${overview ? '' : mapFeatures}<path d="${line}" stroke="${showRoute ? '#171717' : '#17171700'}" stroke-width="${overview ? 2 : 4.5}" fill="none" stroke-linecap="round"/>
+    <circle cx="${sx}" cy="${sy}" r="7" fill="#fff" stroke="#171717" stroke-width="3"/>
+    <circle cx="${sx}" cy="${sy}" r="2.2" fill="#171717"/>
+    <rect x="${(ex - 5).toFixed(1)}" y="${(ey - 5).toFixed(1)}" width="10" height="10" fill="#171717"/>
+    <circle data-cab="1" cx="${px}" cy="${py}" r="6.5" fill="#fff" stroke="#171717" stroke-width="3"/>
+    <circle data-cab-core="1" cx="${px}" cy="${py}" r="2" fill="#171717"/></svg>
     <button class="map-expand" type="button" aria-label="Toggle map zoom">${overview ? '⊕' : '⌖'}</button></div>`;
 }
 
@@ -326,6 +345,7 @@ function showGpuFailure(message: string) {
 
 function setPhase(next: Phase) {
   const prev = phase;
+  doorRequested = keepDoorRequest(next, doorRequested);
   if (next === 'ride' && prev === 'boarded') curbState = CURB_PULL;
   phase = next;
   elapsed = 0;
@@ -346,11 +366,6 @@ function lampForPhase() {
   cab.setPhase(phase);
 }
 
-function matchCard() {
-  return `<div class="lightbar" style="--lamp:${MEGALAMP.hex}"><span>Front light bar · ${MEGALAMP.name}</span></div>
-    <div class="id-row"><div class="plate-badge"><span>TEXAS</span><b>${VEHICLE_PLATE}</b></div>
-    <div class="mega-card"><i style="background:${MEGALAMP.hex}"></i><div><small>MATCH COLOR</small><b>${MEGALAMP.name}</b></div></div></div>`;
-}
 function renderUI() {
   lampForPhase();
   document.querySelector('#location-name')!.textContent = phase === 'complete' || phase === 'arrived' || phase === 'exited' ? DROPOFF.name : PICKUP.name;
@@ -363,39 +378,56 @@ function renderUI() {
   phone.hidden = !phoneVisible || phase === 'ride';
   phone.classList.toggle('matching', phase === 'dispatch' || phase === 'pickup');
   cabin.hidden = phase !== 'ride' && phase !== 'boarded' && phase !== 'arrived';
+  cabin.classList.toggle('riding', phase === 'ride');
   const map = mapMarkup((distance - pickupDist) / Math.max(1, dropoffDist - pickupDist));
+  phoneMap.innerHTML = map;
   const dest = DESTINATIONS.find((item) => item.id === destinationId) ?? DESTINATIONS[0];
   const destInside = pointInRing(dest.lon, dest.lat, AUSTIN_ROBOTAXI_GEOFENCE);
   const inside = pointInRing(PICKUP.lon, PICKUP.lat, AUSTIN_ROBOTAXI_GEOFENCE) && destInside;
   const canStart = belted && door < 0.08;
-  const walkBtn = '<button class="secondary" id="walk-around" type="button">Walk the block</button>';
-  const destinationField = `<label class="dest-label" for="destination">Destination<select id="destination">${DESTINATIONS.map((item) => `<option value="${item.id}"${item.id === dest.id ? ' selected' : ''}>${item.name}</option>`).join('')}</select></label>`;
-  if (phase === 'explore') body.innerHTML = `<h2>Where to?</h2><p class="phone-sub">Choose a destination inside the service area. This preview still drives Congress.</p>${map}
-    ${destinationField}
+  const walkBtn = '<button class="text-btn" id="walk-around" type="button">Walk the block</button>';
+  let actions = '';
+  const options = DESTINATIONS.map((item) => `<option value="${item.id}"${item.id === dest.id ? ' selected' : ''}>${item.name}</option>`).join('');
+  const where = `<label class="where" for="destination"><span class="mag" aria-hidden="true"></span><span class="where-copy"><b>Where to?</b><select id="destination" aria-label="Destination">${options}</select></span></label>`;
+  const places = `<div class="chips"><span class="chip-pill">Home</span><span class="chip-pill">Work</span><span class="chip-pill">${dest.name.split(',')[0]}</span></div>
+    <button class="place-row" type="button"><i class="pin"></i><span><b>Congress Ave</b><small>Austin</small></span></button>
+    <button class="place-row" type="button"><i class="pin"></i><span><b>The Capitol</b><small>Downtown</small></span></button>`;
+  if (phase === 'explore') body.innerHTML = `<h2 class="sr-only">Where to?</h2>
+    ${where}
+    ${places}
     <div class="route-card"><div class="route-row"><i class="dot"></i><div><small>PICKUP</small><b>${PICKUP.name}</b></div><span class="chip in">In area</span></div>
-    <div class="route-row"><i class="square"></i><div><small>DESTINATION</small><b>${dest.name}</b></div><span class="chip ${destInside ? 'in' : 'out'}">${destInside ? 'In area' : 'Outside'}</span></div></div>
-    <div class="fare"><span><b class="fare-name">Cybercab</b> <small>2 seats · No wheel · Simulated fare</small></span><b>~3 min<small>Est. wait under 1 min</small></b></div>
+    <div class="route-row"><i class="square"></i><div><small>DROP OFF</small><b>${dest.name}</b></div><span class="chip ${destInside ? 'in' : 'out'}">${destInside ? 'In area' : 'Outside'}</span></div></div>
+    <div class="fare"><span><b class="fare-name">Cybercab</b> <small>1 rider · Simulated</small></span><b id="dispatch-eta">~3 min</b></div>
     <p class="geo-note">${destInside ? GEOFENCE_NOTE : 'That place is outside the approximated service area, so Confirm stays off.'}</p>
-    <button class="primary" id="request" ${inside ? '' : 'disabled'}>Confirm <span>↗</span></button>
-    ${walkBtn}
-    <p class="micro">Independent concept. No real booking, fare, or Tesla connection. Hours simulated 6:00–23:00.</p>`;
-  if (phase === 'dispatch') body.innerHTML = `<h2>On the way.</h2><p class="phone-sub">Match the front light bar and the plate before you get in.</p>${map}
-    <p class="vehicle-kicker">${VEHICLE_LABEL}</p>${matchCard()}
-    <button class="secondary" id="cancel" type="button">Cancel request</button>${walkBtn}`;
-  if (phase === 'pickup') body.innerHTML = `<h2>Your Cybercab has arrived.</h2><p class="phone-sub">At the curb. Hazards are on and the front bar shows the violet match color. Confirm the plate against the app.</p>${map}
-    <p class="arrive-distance">At the east curb</p>${matchCard()}
-    <button class="primary" id="enter" type="button">Enter <span>→</span></button>
-    <button class="secondary" id="cancel" type="button">Cancel ride</button>${walkBtn}`;
-  if (phase === 'boarded') body.innerHTML = `<h2>Buckle up.</h2><p class="phone-sub">The door closes once everyone is buckled. Then tap Start Ride here or on the cabin screen.</p>
-    <button class="secondary" id="buckle-phone">${belted ? 'Seatbelt fastened' : 'Fasten seatbelt'}</button>
-    <button class="primary" id="start-phone" ${canStart ? '' : 'disabled'}>${belted && !canStart ? 'Closing door…' : 'Start Ride'}</button>`;
-  if (phase === 'arrived') body.innerHTML = `<h2>You have arrived.</h2><p class="phone-sub">${DROPOFF.name}. Parked with hazards on. Open a door when you are ready to step out.</p>${map}
-    <button class="primary" id="exit-phone">Open door</button>`;
-  if (phase === 'exited') body.innerHTML = `<h2>Complete your trip.</h2><p class="phone-sub">Once you are clear of the vehicle, finish in the app. Check for belongings. The doors close after that.</p>${map}
-    <button class="primary" id="finish">Complete trip</button>${walkBtn}`;
-  if (phase === 'complete') body.innerHTML = `<div class="complete-icon">✓</div><h2>Trip complete.</h2><p class="phone-sub">Thanks for riding. This was a local simulation, not a Tesla trip.</p>${map}
-    <div class="trip-summary"><span>Distance<b>${((dropoffDist - pickupDist) / 1000).toFixed(2)} km</b></span><span>Megalamp<b>${MEGALAMP.name}</b></span></div>
-    <button class="primary" id="restart">Take another ride <span>↗</span></button>${walkBtn}`;
+    <p class="micro">Independent concept. No real booking, fare, or Tesla connection.</p>`;
+  if (phase === 'explore') actions = `<button class="primary" id="request" ${inside ? '' : 'disabled'}>Confirm</button>${walkBtn}`;
+  if (phase === 'dispatch') body.innerHTML = `<h2 class="sr-only">On the way</h2>
+    <div class="vehicle-row"><div class="car-thumb" aria-hidden="true"></div>
+    <div class="vehicle-meta"><div class="plate-badge"><span>TEXAS</span><b>${VEHICLE_PLATE}</b></div>
+    <div class="color-line"><i style="background:${MEGALAMP.hex}"></i><b>${MEGALAMP.name}</b></div></div>
+    <b class="eta" id="dispatch-eta">${arrivalCopy(Math.max(0, pickupDist - distance))}</b></div>
+    <p class="phone-sub">Match the front light bar and the plate before you get in.</p>`;
+  if (phase === 'dispatch') actions = `<button class="text-btn" id="cancel" type="button">Cancel</button>${walkBtn}`;
+  if (phase === 'pickup') body.innerHTML = `<h2>Your Cybercab is here</h2>
+    <div class="vehicle-row"><div class="car-thumb" aria-hidden="true"></div>
+    <div class="vehicle-meta"><div class="plate-badge"><span>TEXAS</span><b>${VEHICLE_PLATE}</b></div>
+    <div class="color-line"><i style="background:${MEGALAMP.hex}"></i><b>${MEGALAMP.name}</b></div></div>
+    <b class="eta">Now</b></div>
+    <p class="phone-sub">Hazards are on. The front bar is ${MEGALAMP.name}. Confirm the plate, then get in.</p>`;
+  if (phase === 'pickup') actions = `<button class="primary" id="enter" type="button">Get in</button><button class="text-btn" id="cancel" type="button">Cancel ride</button>${walkBtn}`;
+  if (phase === 'boarded') body.innerHTML = `<h2>Buckle up</h2><p class="phone-sub">The door closes once everyone is buckled. Then tap Start Ride here or on the cabin screen.</p>`;
+  if (phase === 'boarded') actions = `<button class="secondary" id="buckle-phone">${belted ? 'Seatbelt fastened' : 'Fasten seatbelt'}</button><button class="primary" id="start-phone" ${canStart ? '' : 'disabled'}>${belted && !canStart ? 'Closing door…' : 'Start Ride'}</button>`;
+  if (phase === 'arrived') body.innerHTML = `<h2>You've arrived</h2><p class="phone-sub">${DROPOFF.name}. Parked with hazards on.</p>`;
+  if (phase === 'arrived') actions = '<button class="primary" id="exit-phone">Open door</button>';
+  if (phase === 'exited') body.innerHTML = `<h2>How was your ride?</h2>
+    <div class="stars" role="group" aria-label="Rate this ride">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="star" data-star="${n}" aria-label="${n} star">★</button>`).join('')}</div>
+    <p class="phone-sub">Check for belongings. The doors close after you finish.</p>`;
+  if (phase === 'exited') actions = `<button class="primary" id="finish">Done</button>${walkBtn}`;
+  if (phase === 'complete') body.innerHTML = `<h2>Trip complete</h2><p class="phone-sub">Thanks for riding. This was a local simulation, not a Tesla trip.</p>
+    <div class="stars" role="group" aria-label="Rate this ride">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="star" data-star="${n}" aria-label="${n} star">★</button>`).join('')}</div>
+    <div class="trip-summary"><span>Distance<b>${((dropoffDist - pickupDist) / 1000).toFixed(2)} km</b></span><span>Megalamp<b>${MEGALAMP.name}</b></span></div>`;
+  if (phase === 'complete') actions = `<button class="primary" id="restart">Request</button>${walkBtn}`;
+  phoneActions.innerHTML = actions;
   if (phase === 'boarded' || phase === 'ride' || phase === 'arrived') {
     const remainingM = Math.max(0, dropoffDist - distance);
     const eta = Math.max(1, Math.ceil(remainingM / 12));
@@ -404,7 +436,7 @@ function renderUI() {
       : 'Buckle up. The door closes when everyone is buckled. Then Start Ride.';
     const rideStatus = phase === 'ride' && !paused ? 'EN ROUTE' : 'PARK';
     const kicker = phase === 'arrived' ? 'ARRIVED' : phase === 'boarded' ? 'BUCKLE UP' : 'DESTINATION';
-    cabin.innerHTML = `<div class="cabin-header"><span class="cabin-status">${rideStatus}</span><span>6:42</span><span>${temperature}°</span><span>${belted ? 'BELT' : 'UNBUCKLED'}</span><span>CAM</span></div>
+    cabin.innerHTML = `<div class="cabin-header"><span class="cabin-status">${rideStatus}</span><span class="js-clock">6:42</span><span>${temperature}°</span><span>${belted ? 'BELT' : 'UNBUCKLED'}</span><span>CAM</span></div>
       <div class="cabin-grid"><div class="cabin-map">${map}</div>
       <div class="cabin-copy"><small>${kicker}</small>
       <h2>${DROPOFF.name}</h2>
@@ -457,6 +489,7 @@ function renderUI() {
     lookYaw = cab.group.rotation.y;
     lookPitch = 0.08;
     cam = 'cabin';
+    startAudio();
     doorRequested = true;
     setPhase('boarded');
   });
@@ -493,7 +526,7 @@ function renderUI() {
   bind('music', () => {
     muted = !muted;
     if (!audio && !muted) startAudio();
-    if (gain) gain.gain.value = muted ? 0 : 0.018;
+    if (gain) gain.gain.value = muted ? 0 : 1;
     saveRide();
     renderUI();
   });
@@ -507,6 +540,15 @@ function renderUI() {
     renderUI();
   });
   bind('support', () => toast('Simulated support only. This does not contact Tesla or emergency services.'));
+  bind('alerts', () => toast('No new alerts. This preview does not connect to Tesla.'));
+  document.querySelectorAll<HTMLButtonElement>('.star').forEach((button) => {
+    button.addEventListener('click', () => {
+      const picked = Number(button.dataset.star);
+      document.querySelectorAll<HTMLButtonElement>('.star').forEach((star) => {
+        star.classList.toggle('on', Number(star.dataset.star) <= picked);
+      });
+    });
+  });
   syncChrome();
 }
 
@@ -530,14 +572,16 @@ function updateRideReadout() {
   const eta = Math.max(1, Math.ceil(remainingM / 12));
   const etaEl = document.querySelector('#ride-eta');
   if (etaEl) etaEl.textContent = `${eta} min · ${(remainingM / 1000).toFixed(2)} km remaining`;
+  const dispatchEta = document.querySelector('#dispatch-eta');
+  if (dispatchEta && phase === 'dispatch') dispatchEta.textContent = arrivalCopy(Math.max(0, pickupDist - distance));
 }
 
 function updateMapDots() {
-  const overview = mapOverview || phase === 'explore';
+  const overview = mapIsOverview();
   const progress = THREE.MathUtils.clamp((distance - pickupDist) / Math.max(1, dropoffDist - pickupDist), 0, 1);
   const along = pickupDist + progress * (dropoffDist - pickupDist);
   const [px, py] = mapPoint(sample(along).position, overview);
-  document.querySelectorAll('[data-cab]').forEach((node) => {
+  document.querySelectorAll('[data-cab],[data-cab-core]').forEach((node) => {
     node.setAttribute('cx', String(px));
     node.setAttribute('cy', String(py));
   });
@@ -545,18 +589,86 @@ function updateMapDots() {
 
 let audio: AudioContext | undefined;
 let gain: GainNode | undefined;
+let roadGain: GainNode | undefined;
+let doorGain: GainNode | undefined;
+let noiseBuffer: AudioBuffer | undefined;
+let heardBlink = false;
+let lastDoorSound = 0;
 function startAudio() {
   if (audio) return;
   audio = new AudioContext();
   gain = audio.createGain();
-  gain.gain.value = muted ? 0 : 0.018;
+  gain.gain.value = muted ? 0 : 1;
   gain.connect(audio.destination);
-  [110, 164.81, 220].forEach(f => {
-    const o = audio!.createOscillator();
-    o.frequency.value = f;
-    o.connect(gain!);
-    o.start();
-  });
+  noiseBuffer = audio.createBuffer(1, audio.sampleRate * 2, audio.sampleRate);
+  const data = noiseBuffer.getChannelData(0);
+  for (let i = 0; i < data.length; i += 1) data[i] = Math.random() * 2 - 1;
+  const road = audio.createBufferSource();
+  road.buffer = noiseBuffer;
+  road.loop = true;
+  const roadFilter = audio.createBiquadFilter();
+  roadFilter.type = 'lowpass';
+  roadFilter.frequency.value = 240;
+  roadGain = audio.createGain();
+  roadGain.gain.value = 0;
+  road.connect(roadFilter);
+  roadFilter.connect(roadGain);
+  roadGain.connect(gain);
+  road.start();
+  const hush = audio.createBufferSource();
+  hush.buffer = noiseBuffer;
+  hush.loop = true;
+  const hushFilter = audio.createBiquadFilter();
+  hushFilter.type = 'bandpass';
+  hushFilter.frequency.value = 380;
+  hushFilter.Q.value = 0.7;
+  const hushGain = audio.createGain();
+  hushGain.gain.value = 0.012;
+  hush.connect(hushFilter);
+  hushFilter.connect(hushGain);
+  hushGain.connect(gain);
+  hush.start();
+  const doorSrc = audio.createBufferSource();
+  doorSrc.buffer = noiseBuffer;
+  doorSrc.loop = true;
+  const doorFilter = audio.createBiquadFilter();
+  doorFilter.type = 'lowpass';
+  doorFilter.frequency.value = 900;
+  doorGain = audio.createGain();
+  doorGain.gain.value = 0;
+  doorSrc.connect(doorFilter);
+  doorFilter.connect(doorGain);
+  doorGain.connect(gain);
+  doorSrc.start();
+}
+function blip() {
+  if (!audio || !gain || !noiseBuffer || muted) return;
+  const src = audio.createBufferSource();
+  src.buffer = noiseBuffer;
+  const filter = audio.createBiquadFilter();
+  filter.type = 'highpass';
+  filter.frequency.value = 1600;
+  const click = audio.createGain();
+  const now = audio.currentTime;
+  click.gain.setValueAtTime(0.2, now);
+  click.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
+  src.connect(filter);
+  filter.connect(click);
+  click.connect(gain);
+  src.start(now);
+  src.stop(now + 0.05);
+}
+function pumpAudio() {
+  if (!gain) return;
+  gain.gain.value = muted ? 0 : 1;
+  if (roadGain) roadGain.gain.value = muted ? 0 : roadLevel(speedMps);
+  if (doorGain) doorGain.gain.value = muted ? 0 : Math.min(0.05, Math.abs(door - lastDoorSound) * 1.4);
+  lastDoorSound = door;
+  if (!cabMounted) return;
+  const lights = cab.lightState();
+  const signaling = lights.hazard || lights.turn !== 'none';
+  if (signaling && lights.blink !== heardBlink) blip();
+  heardBlink = lights.blink;
 }
 
 let dragging = false, lx = 0, ly = 0;
@@ -650,10 +762,15 @@ function applyQuality(next: Quality, announce = true, fromUser = false) {
   renderer.shadowMap.enabled = graphics.shadows && graphics.shadowSize > 0;
   lighting.apply(graphics, quality, lockSoftware);
   lighting.hookObject(scene);
-  if (ssaoPass) ssaoPass.enabled = graphics.post && quality !== 'low' && quality !== 'medium' && !coarsePointer;
+  if (ssaoPass) {
+    ssaoPass.enabled = graphics.post && quality !== 'low' && !coarsePointer && !softwareGl;
+    ssaoPass.kernelRadius = quality === 'ultra' ? 16 : 12;
+    ssaoPass.minDistance = 0.002;
+    ssaoPass.maxDistance = quality === 'ultra' ? 0.12 : 0.08;
+  }
+  bloomPass.enabled = graphics.post && !softwareGl;
   bloomPass.threshold = 0.96;
-  bloomPass.strength = !graphics.post ? 0.04 : quality === 'ultra' ? 0.16 : quality === 'high' ? 0.12 : 0.08;
-  bloomPass.enabled = true;
+  bloomPass.strength = !graphics.post ? 0 : quality === 'ultra' ? 0.16 : quality === 'high' ? 0.12 : 0.08;
   bloomPass.radius = quality === 'ultra' ? 0.42 : 0.32;
   smaaPass.enabled = graphics.aa && !coarsePointer && !lockSoftware;
   scene.environmentIntensity = quality === 'ultra' ? 1.25 : quality === 'low' ? 0.9 : 1.15;
@@ -753,13 +870,21 @@ let holdCam = false;
 
 function updateCamera(dt: number) {
   if (holdCam) return;
+  if (cam !== 'cabin' && (camera.fov !== 52 || camera.near !== 0.15)) {
+    camera.fov = 52;
+    camera.near = 0.15;
+    camera.updateProjectionMatrix();
+  }
   const view = cam;
   switch (view) {
     case 'cabin': {
-      // Seated between the headrests, low enough to see out the windshield.
-      // In front of the seat backs (local z ≈ 0.29) and above the dash screen.
-      cabinEye.set(0, 1.08, 0.12).applyMatrix4(cab.group.matrixWorld);
-      cabinLook.set(0, 0.82, -8).applyMatrix4(cab.group.matrixWorld);
+      if (camera.fov !== 68 || camera.near !== 0.05) {
+        camera.fov = 68;
+        camera.near = 0.05;
+        camera.updateProjectionMatrix();
+      }
+      cabinEye.set(CABIN_EYE.x, CABIN_EYE.y, CABIN_EYE.z).applyMatrix4(cab.group.matrixWorld);
+      cabinLook.set(CABIN_LOOK.x, CABIN_LOOK.y, CABIN_LOOK.z).applyMatrix4(cab.group.matrixWorld);
       camera.position.copy(cabinEye);
       camera.up.set(0, 1, 0);
       camera.lookAt(cabinLook);
@@ -772,7 +897,7 @@ function updateCamera(dt: number) {
     case 'chase': {
       const face = phase === 'dispatch' || phase === 'pickup';
       if (face) chaseOffset.set(4.6, 2.05, -3.4);
-      else chaseOffset.set(Math.sin(orbitYaw) * 3.1 + 2.4, 2.7 + orbitPitch * 1.2, 7.5);
+      else chaseOffset.set(Math.sin(orbitYaw) * 1.6 + 0.4, 1.85 + orbitPitch * 0.8, 6.2);
       chaseOffset.y = Math.max(1.7, chaseOffset.y);
       desiredCam.copy(chaseOffset).applyQuaternion(cab.group.quaternion).add(cab.group.position);
       const snap = reduceMotion || camera.position.distanceTo(desiredCam) > 3.2 || camera.position.distanceTo(cab.group.position) < cab.cameraClearance;
@@ -879,6 +1004,13 @@ function update(dt: number) {
   cab.update(dt, speedMps, camera.position.distanceTo(cab.group.position), curbRate);
   cab.group.updateMatrixWorld();
   updateCamera(dt);
+  pumpAudio();
+  clockMinutes += dt * 0.35;
+  const clockNow = clockLabel();
+  if (clockNow !== clockShown) {
+    clockShown = clockNow;
+    document.querySelectorAll('.js-clock').forEach((node) => { node.textContent = clockNow; });
+  }
   sun.position.copy(cab.group.position).add(sunOffset);
   sun.target.position.copy(cab.group.position);
   lighting.update(cab.group.position);
@@ -905,6 +1037,12 @@ function noteFrame(dt: number) {
   toast(adapted.changed === 'down' ? 'Graphics eased down to hold the frame rate.' : 'Graphics stepped up.');
   void restyleWorld();
 }
+function renderFrame() {
+  const ssrOn = !!lighting.ssr?.enabled;
+  const ssaoOn = !!ssaoPass?.enabled;
+  if (!graphics.post && !graphics.aa && !ssrOn && !ssaoOn) renderer.render(scene, camera);
+  else composer.render();
+}
 function animate(now: number) {
   requestAnimationFrame(animate);
   if (document.hidden || window.__cybercabPause) { last = now; return; }
@@ -925,7 +1063,7 @@ function animate(now: number) {
   }
   frame += 1;
   renderer.shadowMap.needsUpdate = frame % 2 === 0;
-  composer.render();
+  renderFrame();
 }
 camera.position.copy(walk);
 camera.rotation.order = 'YXZ';
@@ -998,13 +1136,13 @@ function mountCab(loaded: Cybercab) {
     advanceTime: (ms: number) => {
       for (let t = 0; t < ms; t += 16.667) update(Math.min(16.667, ms - t) / 1000);
       renderUI();
-      composer.render();
+      renderFrame();
     },
     frameVehicle: (eye: number[], look: number[]) => {
       holdCam = true;
       camera.position.copy(new THREE.Vector3(eye[0], eye[1], eye[2]).applyMatrix4(cab.group.matrixWorld));
       camera.lookAt(new THREE.Vector3(look[0], look[1], look[2]).applyMatrix4(cab.group.matrixWorld));
-      composer.render();
+      renderFrame();
     },
     releaseCamera: () => { holdCam = false; },
   });
@@ -1060,13 +1198,13 @@ void Promise.all([
   }).catch(() => undefined),
   world.ready,
   assets.ready,
-]).then(([loaded]) => {
+]).then(async ([loaded]) => {
   setBoot('Dressing the avenue', 88);
-  restyleWorld();
+  await restyleWorld();
   setBoot('Placing the Cybercab', 92);
   mountCab(loaded);
-  restyleWorld();
-  composer.render();
+  await restyleWorld();
+  renderFrame();
   hideBoot();
 }).catch((error) => {
   console.error(error);

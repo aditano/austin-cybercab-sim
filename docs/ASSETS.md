@@ -46,7 +46,17 @@ License: [CC0](https://polyhaven.com/license). No login.
 | `props/trash.glb` | Metal Trash Can | https://polyhaven.com/a/metal_trash_can |
 | `props/planter.glb` | Planter Box 01 | https://polyhaven.com/a/planter_box_01 |
 
-Jacaranda / island trees from Poly Haven are 60–200 MB at 1K and were not bundled. Street trees keep Kenney meshes plus the existing Poly Haven bark/leaf textures already in `public/textures/`.
+Jacaranda, island, pine, and fir photogrammetry trees from Poly Haven are 60–949 MB at 1K and were not bundled. Near the ride, street trees use the existing Poly Haven bark and leaf textures on card canopies. Farther trees stay Kenney cones.
+
+| File | Asset | URL |
+| --- | --- | --- |
+| `props/facade-apartments.glb` | Modular Urban Apartments Facade (1K, simplified) | https://polyhaven.com/a/modular_urban_apartments_facade |
+| `props/fire-escape.glb` | Modular Fire Escape (simplified) | https://polyhaven.com/a/modular_fire_escape |
+| `props/shrub.glb` | Shrub 01 (simplified) | https://polyhaven.com/a/shrub_01 |
+
+These three are CC0 scans, mesh-simplified so a phone on Low can skip them. Low keeps Kenney props. There is no small CC0 photogrammetry car that fits instanced downtown traffic, so moving traffic stays the Kenney Car Kit with a clearcoat material. Sketchfab downloads require a login and were not used.
+
+The phone wordmark is set in [Inter](https://fonts.google.com/specimen/Inter) (SIL Open Font License), a free stand-in. It is not Tesla’s Universal Sans, and no Tesla logo file is bundled.
 
 ## Textures and HDRI (already in the repo)
 
