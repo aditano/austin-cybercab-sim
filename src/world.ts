@@ -100,8 +100,8 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
   const pavement=texturedMaterial(0xffffff,concreteDiff,concreteNor,concreteRough,.55,.96);
   const curb=texturedMaterial(0xd7d2c8,concreteDiff,concreteNor,concreteRough,.7,.9);
   const metal=new THREE.MeshStandardMaterial({color:0x3a4244,metalness:.82,roughness:.28,envMapIntensity:1.05});
-  const stripe=new THREE.MeshStandardMaterial({color:0x9a9588,roughness:0.78,metalness:.02,envMapIntensity:.2});
-  const gold=new THREE.MeshStandardMaterial({color:0xb09a62,roughness:0.72,metalness:.12,envMapIntensity:.25});
+  const stripe=new THREE.MeshStandardMaterial({color:0xa89880,roughness:0.9,metalness:0,envMapIntensity:0.05});
+  const gold=new THREE.MeshStandardMaterial({color:0xb08d48,roughness:0.84,metalness:0.04,envMapIntensity:0.08});
   const crackMat=new THREE.MeshStandardMaterial({color:0x1a1c1e,roughness:0.95,polygonOffset:true,polygonOffsetFactor:-3});
   const patchMat=new THREE.MeshStandardMaterial({color:0x3e4448,roughness:0.9,polygonOffset:true,polygonOffsetFactor:-2});
   const tarMat=new THREE.MeshStandardMaterial({color:0x121416,roughness:0.84,polygonOffset:true,polygonOffsetFactor:-4});
@@ -520,36 +520,36 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
   }
   function placeWear(parent:THREE.Object3D) {
     const hubs=[new THREE.Vector2(80,-20), new THREE.Vector2(165,-300)];
-    const near=(p:THREE.Vector2)=>hubs.some(h=>h.distanceToSquared(p)<200*200);
+    const near=(p:THREE.Vector2)=>hubs.some(h=>h.distanceToSquared(p)<160*160);
     let cracks=0, patches=0, seams=0;
     for(const seg of wearSegs) {
       const len=seg.a.distanceTo(seg.b);
-      if(len<8) continue;
-      const mid=seg.a.clone().add(seg.b).multiplyScalar(0.5);
-      if(!near(mid)) continue;
+      if(len<6) continue;
       const dir=seg.b.clone().sub(seg.a).normalize();
       const normal=new THREE.Vector2(-dir.y, dir.x);
       const yaw=Math.atan2(dir.x, dir.y);
-      for(let t=5;t<len-4;t+=24) {
+      const step=seg.congress?14:28;
+      for(let t=4;t<len-3;t+=step) {
         const p=seg.a.clone().addScaledVector(dir,t);
-        const seed=Math.round(p.x*2+p.y);
-        if(seg.congress && seams<22 && Math.floor(t/24)%2===0) {
-          box(parent,p.x,0.172,p.y,seg.width*0.86,0.012,0.16,tarMat,yaw);
+        if(!near(p)) continue;
+        const seed=Math.round(p.x*3+p.y);
+        if(seg.congress && seams<40) {
+          box(parent,p.x,0.188,p.y,seg.width*0.92,0.02,0.22,tarMat,yaw);
           seams++;
         }
-        if(patches<16 && seeded(seed)%1<0.45) {
-          const q=p.clone().addScaledVector(normal,(seeded(seed+2)-0.5)*seg.width*0.35);
-          box(parent,q.x,0.171,q.y,1.6+seeded(seed+3)*1.8,0.014,2.2+seeded(seed+4)*1.4,patchMat,yaw+(seeded(seed+5)-0.5)*0.4);
+        if(patches<28 && seeded(seed)<0.55) {
+          const q=p.clone().addScaledVector(normal,(seeded(seed+2)-0.5)*seg.width*0.28);
+          box(parent,q.x,0.186,q.y,2.4+seeded(seed+3)*2.2,0.02,3.1+seeded(seed+4),patchMat,yaw+(seeded(seed+5)-0.5)*0.35);
           patches++;
         }
-        if(cracks<36) {
-          let c=p.clone().addScaledVector(normal,(seeded(seed+6)-0.5)*seg.width*0.4);
-          const crackYaw=yaw+(seeded(seed+7)-0.5)*1.2;
-          for(let i=0;i<4;i++) {
-            const piece=0.45+seeded(seed+i*3)*0.9;
-            const turn=crackYaw+(seeded(seed+i*9)-0.5)*0.9;
-            box(parent,c.x,0.174,c.y,0.045,0.01,piece,crackMat,turn);
-            c=c.add(new THREE.Vector2(Math.sin(turn), Math.cos(turn)).multiplyScalar(piece*0.55));
+        if(cracks<48 && seeded(seed+1)<0.7) {
+          let c=p.clone().addScaledVector(normal,(seeded(seed+6)-0.5)*seg.width*0.3);
+          let turn=yaw+(seeded(seed+7)-0.5)*1.1;
+          for(let i=0;i<5;i++) {
+            const piece=0.7+seeded(seed+i*3)*1.3;
+            turn+= (seeded(seed+i*9)-0.5)*0.7;
+            box(parent,c.x,0.19,c.y,0.07,0.018,piece,crackMat,turn);
+            c=c.clone().add(new THREE.Vector2(Math.sin(turn), Math.cos(turn)).multiplyScalar(piece*0.62));
           }
           cracks++;
         }

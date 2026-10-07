@@ -129,3 +129,21 @@ Judged again on 7 Oct 2026 after the masonry, oak, and traffic-car pass. Same wa
 | Performance | Medium forced stills returned in about 25 s including boot on SwiftShader, with no shader errors. Low remains the software-GL default. | kept |
 
 What still looks fake, in order: the towers are footprint extrusions, not limestone blocks with fire escapes and cornices; the oaks are cards; the cars are a few dozen triangles; the people are game rigs; the sky is a shader. A photograph of Congress Avenue still wins on every one of those. Closing that gap with free files would need a small CC0 photogrammetry car and a small oak, and neither was available under a few megabytes without a login.
+
+## Round 4, free assets only
+
+Judged again on 7 Oct 2026 at the same walk angle, plus chase and the explore phone. Medium, forced, 1440×900, SwiftShader. Experience and ride-flow passed. No paid files.
+
+The lavender column was the Medium Kenney curved lamp. `light-curved.glb` stores positions as int16 (about −32767..32767) and a node scale of 0.337. `instanceProp` used the raw accessor, and lamps are placed only on the positive-normal sidewalk, which is east when Congress runs north. World height was about 24 m and the atlas smeared into a pale vertical shaft. The same bake now applies to every instanced Kenney prop. On the new walk still, the right half of the comparison panel has one pixel in a saturated purple hue. There is no vertical run.
+
+| Ask | What the new still shows | Status |
+| --- | --- | --- |
+| Sidewalk pillar | East-sidewalk lamp is a lamp-height prop, not a column. | fixed |
+| Trees | Instanced trunk, limbs, and a crown of 58 icosahedron clumps. Green samples in the walk frame went from 15,673 to 35,028. They are solid clumps, not a scanned live oak. | partial |
+| Cars | Chamfered loft, wheel-arch stations, mirrors, separate rims, clearcoat on the HDRI. Still an original low-poly body. Sketchfab needs a login here; Khronos samples have no street sedan. | partial |
+| Towers | Tall footprints get a masonry podium, an inset shaft, a second setback, cornices, and every fourth tall building is reflective mullioned glass. The opening block is still a low extrusion with shader windows. | partial |
+| Sky | Procedural sky mesh is hidden. Background is Kloofendal overcast pure sky. The top of the walk frame runs from about 47 to 241, so the clouds are in the picture. Mean sky is near the photograph's grey. | partial |
+| Road | Crack, patch, and tar boxes sit on Congress within 160 m of the two hubs. Lane and center paint are dirtier (`#a89880`, `#b08d48`) and no longer share the asphalt color. At the walk angle they are easy to miss next to the photograph. | partial |
+| People | Michelle and the Ready Player Me sample, with Soldier's Walk and Idle retargeted. Soldier and X Bot are not spawned. Two rigs and a tint are not a sidewalk crowd. | partial |
+
+What still looks fake, in order: the crowns are clumps of spheres; the cars are still a built mesh, not a photographed car; the near buildings are extruded footprints; the road wear is a few dark boxes; the people are two game skeletons. This is not GTA 6, and it does not match the Congress Avenue photograph.
