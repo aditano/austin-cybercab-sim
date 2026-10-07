@@ -112,3 +112,20 @@ Medium, forced, SwiftShader, 1440×900. Experience and ride-flow both passed.
 The walk frame no longer has a compact orange sign. Orange pixels that remain are spread across the sky. The explore phone samples as about `rgb(42, 42, 46)`. The pickup phone samples as `rgb(194, 75, 255)` at the arrow, which is the violet Megalamp fill. A chase crop of the lower frame is road and the cab, not a parked black block.
 
 It is still not the Barera photograph and not GTA 6. The towers are textured extrusions. The moving cars are still the Kenney kit. The sky is still a shader plus an HDRI. Ultra screen-space reflections were left on Ultra only.
+
+## Round 3, free assets only
+
+Judged again on 7 Oct 2026 after the masonry, oak, and traffic-car pass. Same walk angle as the Congress Avenue comparison, plus the chase camera and the explore phone. Medium, forced, 1440×900, SwiftShader. No API keys, no paid models, no Google 3D Tiles.
+
+| Ask | What the new still shows | Status |
+| --- | --- | --- |
+| Facades | The blue/beige photo-tile checker is gone. Walls use Bricks100, Bricks051, and Plaster007 (color, normal, roughness) with mipmaps and 16× anisotropy. Windows are shader openings with a per-floor shift. Ground floors have awnings and canvas shop signs. Tall towers are still one extrusion, so a repeating bay is still visible up close. | partial |
+| Live oaks | Hero sidewalks use instanced trunks and overlapping canopy cards, with a blob shadow on Medium and leaf shadows on High/Ultra. They read as street trees. They are not scanned live oaks. Far trees are still the Kenney cones. | partial |
+| Cars | Traffic and curb cars are original glTF sedans, SUVs, and hatches with glass, tires, headlights, and taillights (`tools/traffic_cars.py`). They are smooth-shaded and in proportion. They are still low-poly. Kenney files stay on disk and are not spawned. | partial |
+| People | Mixamo soldier and Xbot walk the near sidewalks, tinted, animated. Three r180 has no instanced skinned mesh, so each person is a clone. They do not look like photographed Austinites. | partial |
+| Street furniture | Congress has bike-lane lines, mast-arm signal heads, scooters, planters, and lamps. Paramount and State marquees sit at their OSM coordinates (713 and 719 Congress), which is the north end of the ride, not the opening block. | partial |
+| Blue sidewalk column | The Poly Haven facade module, fire escape, and shrub are no longer stood on the sidewalk. The opening frame's right side samples as beige, not a blue column. | fixed |
+| Lighting | Golden-hour HDRI stays. Sun is higher and the fog is thinner so the street is closer to the photograph's exposure. Medium gets a small SSAO kernel, contact shadows, a canopy blob, and slight bloom. High and Ultra keep the larger SSAO, leaf shadows, and chase depth of field. Phones skip SSAO and bloom. | partial |
+| Performance | Medium forced stills returned in about 25 s including boot on SwiftShader, with no shader errors. Low remains the software-GL default. | kept |
+
+What still looks fake, in order: the towers are footprint extrusions, not limestone blocks with fire escapes and cornices; the oaks are cards; the cars are a few dozen triangles; the people are game rigs; the sky is a shader. A photograph of Congress Avenue still wins on every one of those. Closing that gap with free files would need a small CC0 photogrammetry car and a small oak, and neither was available under a few megabytes without a login.

@@ -22,15 +22,15 @@ type Template = {
 };
 
 const CAR_FILES: Record<StreetKind, string> = {
-  sedan: 'cars/sedan.glb',
-  'sedan-sports': 'cars/sedan-sports.glb',
-  hatch: 'cars/hatchback-sports.glb',
-  suv: 'cars/suv.glb',
-  'suv-luxury': 'cars/suv-luxury.glb',
-  van: 'cars/van.glb',
-  pickup: 'cars/truck.glb',
-  taxi: 'cars/taxi.glb',
-  police: 'cars/police.glb',
+  sedan: 'cars/traffic-sedan.glb',
+  'sedan-sports': 'cars/traffic-hatch.glb',
+  hatch: 'cars/traffic-hatch.glb',
+  suv: 'cars/traffic-suv.glb',
+  'suv-luxury': 'cars/traffic-suv.glb',
+  van: 'cars/traffic-suv.glb',
+  pickup: 'cars/traffic-suv.glb',
+  taxi: 'cars/traffic-sedan.glb',
+  police: 'cars/traffic-suv.glb',
 };
 
 const PROP_FILES: Record<PropId, string> = {
@@ -243,6 +243,13 @@ export function createStreetAssets(): StreetAssets {
       group.userData.wheels = [] as THREE.Object3D[];
       model.traverse((obj) => {
         if (/wheel/i.test(obj.name)) group.userData.wheels.push(obj);
+        if (!(obj instanceof THREE.Mesh)) return;
+        const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+        for (const mat of mats) {
+          if (!(mat instanceof THREE.MeshStandardMaterial)) continue;
+          if (/headlamp/i.test(obj.name)) mat.emissiveIntensity = 2.4;
+          if (/taillight/i.test(obj.name)) mat.emissiveIntensity = 2.8;
+        }
       });
       return group;
     },

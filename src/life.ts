@@ -50,15 +50,16 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
       group.position.copy(position).addScaledVector(across, lateral);
       const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 5.8, 8), poleMat);
       pole.position.y = 2.9; pole.castShadow = true; group.add(pole);
-      const arm = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.1, 0.1), poleMat);
-      arm.position.set(-side * 1.0, 5.5, 0); group.add(arm);
-      const box = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.85, 0.22), housing);
-      box.position.set(-side * 2.1, 5.15, 0); group.add(box);
+      const armLen = 6.6;
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(armLen, 0.1, 0.12), poleMat);
+      arm.position.set(-side * armLen * 0.5, 5.55, 0); group.add(arm);
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.95, 0.28), housing);
+      box.position.set(-side * (armLen - 0.2), 5.15, 0); group.add(box);
       const lamps: THREE.MeshStandardMaterial[] = [];
       for (let i = 0; i < 3; i++) {
         const mat = new THREE.MeshStandardMaterial({ color: 0x111, emissive: 0x111, emissiveIntensity: 0.2 });
         const lens = new THREE.Mesh(new THREE.CircleGeometry(0.08, 12), mat);
-        lens.position.set(-side * 2.1, 5.4 - i * 0.24, 0.12);
+        lens.position.set(-side * (armLen - 0.2), 5.42 - i * 0.26, 0.16);
         group.add(lens);
         lamps.push(mat);
       }
@@ -127,8 +128,9 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
       const person = assets ? assets.spawnPerson(i + 3, quality) : null;
       const mesh = person?.group ?? createPedestrian(i + 3);
       root.add(mesh);
+      const alongHero = Math.min(routeLength - 8, 132 + (i % 8) * 14);
       peds.push({
-        mesh, dist: (i / Math.max(1, budget.peds)) * routeLength,
+        mesh, dist: i < 8 ? alongHero : (i / Math.max(1, budget.peds)) * routeLength,
         side: i % 2 === 0 ? 1 : -1, crossing: false, t: 0, seed: i, person,
       });
     }
@@ -142,9 +144,8 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
       mesh.position.copy(position).addScaledVector(across, east ? OFFSET.park : OFFSET.oppPark);
       mesh.position.y = ROAD_Y;
       mesh.rotation.y = heading + (east ? 0 : Math.PI);
-      // The opening camera looks down this block. A Kenney body here reads as the hero car.
-      const nearHero = (mesh.position.x - 80) ** 2 + (mesh.position.z + 20) ** 2 < 58 * 58;
-      if (nearHero) {
+      const inLens = (mesh.position.x - 80) ** 2 + (mesh.position.z + 20) ** 2 < 3.2 * 3.2;
+      if (inLens) {
         root.remove(mesh);
         continue;
       }
