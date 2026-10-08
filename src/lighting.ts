@@ -32,6 +32,7 @@ export function createLighting(
   let pmremGenerator: THREE.PMREMGenerator | null = null;
   let pmremTarget: THREE.WebGLRenderTarget | null = null;
   const lightDir = new THREE.Vector3();
+  const lastProbeAt = new THREE.Vector3(Number.POSITIVE_INFINITY, 0, 0);
 
   function remember(material: THREE.Material) {
     if (!originals.has(material)) originals.set(material, material.onBeforeCompile);
@@ -210,7 +211,10 @@ export function createLighting(
       }
       if (probe && probeTarget) {
         probeTick += 1;
-        if (probeTick === 1 || probeTick % 24 === 0) {
+        const moved = lastProbeAt.distanceToSquared(target) > 6.25;
+        // Rebake less often; skip when the cab has barely moved.
+        if (probeTick === 1 || (probeTick % 48 === 0 && moved)) {
+          lastProbeAt.copy(target);
           probe.position.copy(target);
           probe.position.y += 3.8;
           const cabRoot = scene.getObjectByName('Cybercab');

@@ -46,9 +46,9 @@ export const QUALITY_ORDER: readonly Quality[] = ['low', 'medium', 'high', 'ultr
 
 export const PRESET_GRAPHICS: Record<Quality, GraphicsToggles> = {
   low: { pixelScale: 1, shadows: false, shadowSize: 0, cascades: 0, reflections: 'ibl', lod: 'near', aa: false, post: false, textures: 'low' },
-  medium: { pixelScale: 1.25, shadows: true, shadowSize: 1024, cascades: 2, reflections: 'ibl', lod: 'mid', aa: true, post: true, textures: 'high' },
-  high: { pixelScale: 1.5, shadows: true, shadowSize: 2048, cascades: 3, reflections: 'probe', lod: 'far', aa: true, post: true, textures: 'high' },
-  ultra: { pixelScale: 1.75, shadows: true, shadowSize: 2048, cascades: 4, reflections: 'ssr', lod: 'far', aa: true, post: true, textures: 'high' },
+  medium: { pixelScale: 1.15, shadows: true, shadowSize: 1024, cascades: 2, reflections: 'ibl', lod: 'mid', aa: true, post: true, textures: 'high' },
+  high: { pixelScale: 1.35, shadows: true, shadowSize: 1536, cascades: 3, reflections: 'probe', lod: 'far', aa: true, post: true, textures: 'high' },
+  ultra: { pixelScale: 1.5, shadows: true, shadowSize: 2048, cascades: 3, reflections: 'ssr', lod: 'far', aa: true, post: true, textures: 'high' },
 };
 
 export const QUALITY_LABEL: Record<Quality, string> = {

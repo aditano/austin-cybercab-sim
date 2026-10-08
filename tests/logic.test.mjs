@@ -64,13 +64,14 @@ test('pixel ratio, shadows, Auto, and graphics persistence', () => {
   assert.equal(defaultQuality({ software: false, coarse: false }), 'medium');
   assert.equal(pixelRatioFor(3, 'ultra', { software: true, coarse: false }), 1);
   assert.equal(pixelRatioFor(3, 'low', { software: false, coarse: false }), 1);
-  assert.equal(pixelRatioFor(3, 'medium', { software: false, coarse: false }), 1.25);
+  assert.equal(pixelRatioFor(3, 'medium', { software: false, coarse: false }), 1.15);
   assert.equal(pixelRatioFor(3, 'ultra', { software: false, coarse: true }), 1.25);
-  assert.equal(pixelRatioFor(3, 'ultra', { software: false, coarse: false }), 1.75);
+  assert.equal(pixelRatioFor(3, 'ultra', { software: false, coarse: false }), 1.5);
   assert.equal(pixelRatioFor(1, 'ultra', { software: false, coarse: false }), 1);
   assert.equal(shadowMapSize('low', false), 0);
   assert.equal(shadowMapSize('ultra', true), 1024);
   assert.equal(shadowMapSize('ultra', false), 2048);
+  assert.equal(shadowMapSize('high', false), 1536);
 });
 
 test('sample destinations honor the service-area ring', () => {
