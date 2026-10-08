@@ -18,6 +18,12 @@ test('bundled geographic snapshot preserves real features and valid coordinates'
   }
 });
 
+test('path sampling exposes an allocation-free samplePathInto helper', () => {
+  assert.match(geo, /export function samplePathInto/);
+  assert.match(geo, /out\.copy\(points\[i - 1\]\)\.lerp\(points\[i\], t\)/);
+  assert.match(geo, /export function samplePath\(/);
+});
+
 test('ride corridor uses surveyed Congress Avenue vertices', () => {
   const match = geo.match(/export const CONGRESS_ROUTE: \[number, number\]\[\] = (\[[\s\S]*?\]);/);
   assert.ok(match);

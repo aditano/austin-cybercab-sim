@@ -78,12 +78,22 @@ export function measurePath(points: THREE.Vector3[]) {
   return { cumulative, length };
 }
 
-export function samplePath(points: THREE.Vector3[], cumulative: number[], distance: number) {
+/** Write the interpolated path sample into `out` to avoid per-call Vector3 allocations. */
+export function samplePathInto(
+  points: THREE.Vector3[],
+  cumulative: number[],
+  distance: number,
+  out: THREE.Vector3,
+) {
   let i = 1;
   while (i < cumulative.length - 1 && cumulative[i] < distance) i++;
   const span = Math.max(1e-4, cumulative[i] - cumulative[i - 1]);
   const t = THREE.MathUtils.clamp((distance - cumulative[i - 1]) / span, 0, 1);
-  const position = points[i - 1].clone().lerp(points[i], t);
+  out.copy(points[i - 1]).lerp(points[i], t);
   const heading = Math.atan2(-(points[i].x - points[i - 1].x), -(points[i].z - points[i - 1].z));
-  return { position, heading };
+  return { position: out, heading };
+}
+
+export function samplePath(points: THREE.Vector3[], cumulative: number[], distance: number) {
+  return samplePathInto(points, cumulative, distance, new THREE.Vector3());
 }

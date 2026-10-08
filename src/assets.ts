@@ -180,9 +180,15 @@ export function createStreetAssets(): StreetAssets {
   }
 
   const ready = (async () => {
-    const carLoads = (Object.keys(CAR_FILES) as StreetKind[]).map(async (kind) => {
-      cars.set(kind, await loadOne(CAR_FILES[kind]));
-    });
+    const uniqueCarFiles = [...new Set(Object.values(CAR_FILES))];
+    const carTemplates = new Map<string, Template>();
+    await Promise.all(uniqueCarFiles.map(async (file) => {
+      carTemplates.set(file, await loadOne(file));
+    }));
+    for (const kind of Object.keys(CAR_FILES) as StreetKind[]) {
+      const template = carTemplates.get(CAR_FILES[kind]);
+      if (template) cars.set(kind, template);
+    }
     const propLoads = (Object.keys(PROP_FILES) as PropId[]).map(async (id) => {
       props.set(id, await loadOne(PROP_FILES[id]));
     });
@@ -194,7 +200,7 @@ export function createStreetAssets(): StreetAssets {
         .map((clip) => retargetClip(clip, spec.strip));
       people.push({ id: spec.id, template, clips });
     });
-    await Promise.all([...carLoads, ...propLoads, ...peopleLoads]);
+    await Promise.all([...propLoads, ...peopleLoads]);
     people.sort((a, b) => a.id.localeCompare(b.id));
   })();
 
@@ -329,7 +335,8 @@ export function createStreetAssets(): StreetAssets {
         const inst = new THREE.InstancedMesh(geometry, mat, count);
         inst.castShadow = quality !== 'low';
         inst.receiveShadow = quality !== 'low';
-        inst.frustumCulled = false;
+        inst.computeBoundingSphere();
+        inst.frustumCulled = true;
         collected.push(mat);
         meshes.push(inst);
       }

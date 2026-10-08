@@ -120,7 +120,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
   function pbrMap(file:string, srgb:boolean) {
     const texture=texLoader.load(`${import.meta.env.BASE_URL}textures/facades/${file}`);
     texture.wrapS=texture.wrapT=THREE.RepeatWrapping;
-    texture.anisotropy=coarse?4:16;
+    texture.anisotropy=coarse?2:8;
     texture.generateMipmaps=true;
     texture.minFilter=THREE.LinearMipmapLinearFilter;
     texture.magFilter=THREE.LinearFilter;
@@ -521,7 +521,13 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     const stem=new THREE.Mesh(new THREE.BoxGeometry(0.18,3.6,0.18), metal);
     stem.position.set(x,5.4,z); stem.castShadow=true; parent.add(stem);
   }
-  function render(data:MapData) {
+  function yieldFrame() {
+    return new Promise<void>((resolve) => {
+      if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => resolve());
+      else setTimeout(resolve, 0);
+    });
+  }
+  async function render(data:MapData) {
     city.clear();
     streetSpots.length=0;
     awnings.length=0;
@@ -537,8 +543,19 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     }
     junctions=[...nodes.values()].filter(n=>n.names.size>1).map(n=>n.point);
     for(const w of data.water||[])polygon(city,w.coordinates,.08,waterMaterial,-.17);
-    (data.buildings||[]).forEach((b,i)=>building(city,b,i));
-    (data.roads||[]).forEach(r=>road(city,r));
+    const buildings = data.buildings || [];
+    for (let i = 0; i < buildings.length; i++) {
+      building(city, buildings[i], i);
+      if (i > 0 && i % 80 === 0) {
+        onStatus?.(`Building downtown · ${Math.round((i / buildings.length) * 100)}%`);
+        await yieldFrame();
+      }
+    }
+    const roads = data.roads || [];
+    for (let i = 0; i < roads.length; i++) {
+      road(city, roads[i]);
+      if (i > 0 && i % 120 === 0) await yieldFrame();
+    }
     streetIntersection(city,point([-97.7442121,30.2643199]));
     parkedTraffic(data.roads||[]);
     // Congress bridge balustrades and regular concrete piers, aligned to the street.
@@ -558,6 +575,8 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       const x=-700+i*62,z=365+x*.15;
       box(city,x,.02,z,24,.08,6,lawn);
     }
+    await yieldFrame();
+    onStatus?.('Merging the avenue');
     // Batch street furniture and markings: thousands of details, a handful of draws.
     const batches=new Map<THREE.Material,THREE.Mesh[]>();
     for(const child of [...city.children]) {
@@ -571,6 +590,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       meshes.forEach((mesh,i)=>{mesh.updateMatrix();batch.setMatrixAt(i,mesh.matrix);city.remove(mesh);});
       batch.castShadow=true;batch.receiveShadow=true;city.add(batch);
     }
+    await yieldFrame();
     const instanceGroups=new Map<THREE.Material,THREE.InstancedMesh[]>();
     for(const child of [...city.children]) if(child instanceof THREE.InstancedMesh) {
       const material=child.material as THREE.Material;
@@ -583,6 +603,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       for(const mesh of meshes){for(let i=0;i<mesh.count;i++){mesh.getMatrixAt(i,matrix);batch.setMatrixAt(index++,matrix);}city.remove(mesh);mesh.dispose();}
       batch.castShadow=true;batch.receiveShadow=true;city.add(batch);
     }
+    await yieldFrame();
     const solids=new Map<THREE.Material,THREE.Mesh[]>();
     for(const child of [...city.children]) {
       if(child instanceof THREE.Mesh && !(child instanceof THREE.InstancedMesh) && child.material!==waterMaterial && child.material!==congressSign && child.material!==secondSign) {
@@ -590,11 +611,14 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
         const list=solids.get(material)||[];list.push(child);solids.set(material,list);
       }
     }
-    for(const [material,meshes] of solids) {
+    const solidEntries = [...solids.entries()];
+    for (let s = 0; s < solidEntries.length; s++) {
+      const [material, meshes] = solidEntries[s];
       const geometries=meshes.map(mesh=>{mesh.updateMatrix();return mesh.geometry.clone().applyMatrix4(mesh.matrix);});
       const merged=mergeGeometries(geometries);
       geometries.forEach(geometry=>geometry.dispose());
       if(merged){meshes.forEach(mesh=>city.remove(mesh));const mesh=new THREE.Mesh(merged,material);mesh.castShadow=material.userData.castShadow!==false;mesh.receiveShadow=true;city.add(mesh);}
+      if (s % 2 === 1) await yieldFrame();
     }
     dressLandmarks(city,data);
     if(awnings.length) {
@@ -610,7 +634,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
         awningMesh.setMatrixAt(i,awningDummy.matrix);
         awningMesh.setColorAt(i,new THREE.Color(awningTints[i%awningTints.length]));
       });
-      awningMesh.castShadow=true;awningMesh.receiveShadow=true;awningMesh.frustumCulled=false;city.add(awningMesh);
+      awningMesh.castShadow=true;awningMesh.receiveShadow=true;awningMesh.computeBoundingSphere();awningMesh.frustumCulled=true;city.add(awningMesh);
     }
     for(const sign of shopSigns) {
       const board=new THREE.Mesh(new THREE.PlaneGeometry(Math.min(3.2,2.2),0.55),signTexture(sign.text,'#1b1a17'));
@@ -664,7 +688,7 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
       bark.push(geo);
     }
     const crown: THREE.BufferGeometry[] = [];
-    for (let i = 0; i < 42; i++) {
+    for (let i = 0; i < 28; i++) {
       const ang = seeded(i * 19) * Math.PI * 2;
       const rad = Math.pow(seeded(i * 7), 0.62) * 2.9;
       const lift = Math.sqrt(Math.max(0, 1 - (rad / 3.7) ** 2));
@@ -695,8 +719,8 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     if(!spots.length || !oakGeometry.barkGeo || !oakGeometry.crownGeo) return;
     const trunks=new THREE.InstancedMesh(oakGeometry.barkGeo, trunkMat, spots.length);
     const leaves=new THREE.InstancedMesh(oakGeometry.crownGeo, oakLeafMat, spots.length);
-    trunks.castShadow=quality!=='low'; trunks.receiveShadow=true; trunks.frustumCulled=false;
-    leaves.castShadow=quality!=='low'; leaves.receiveShadow=false; leaves.frustumCulled=false;
+    trunks.castShadow=quality!=='low'; trunks.receiveShadow=true;
+    leaves.castShadow=quality!=='low'; leaves.receiveShadow=false;
     spots.forEach((spot,i)=>{
       const s=0.9+seeded(spot.seed)*0.16;
       dummy.position.set(spot.x,0,spot.z);
@@ -708,6 +732,10 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     });
     trunks.instanceMatrix.needsUpdate=true;
     leaves.instanceMatrix.needsUpdate=true;
+    trunks.computeBoundingSphere();
+    leaves.computeBoundingSphere();
+    trunks.frustumCulled=true;
+    leaves.frustumCulled=true;
     parent.add(trunks, leaves);
   }
   function dress(assets: StreetAssets, quality: Quality, eye?: { x: number; z: number }): THREE.Object3D[] {
@@ -782,8 +810,8 @@ export function createWorld(scene:THREE.Scene, onStatus?: (text: string) => void
     let data: MapData | null = null;
     try { data = await loadMapData(); } catch { data = null; }
     onStatus?.('Building downtown');
-    await new Promise<void>((resolve) => { setTimeout(resolve, 32); });
-    if (data?.roads?.length && data.buildings?.length) render(data);
+    await yieldFrame();
+    if (data?.roads?.length && data.buildings?.length) await render(data);
     else createFallback();
     await Promise.race([textureReady, new Promise<void>((resolve) => { setTimeout(resolve, 12000); })]);
   })();

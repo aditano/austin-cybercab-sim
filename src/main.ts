@@ -16,7 +16,7 @@ import { createStreetAssets } from './assets';
 import { createLighting } from './lighting';
 import {
   APPROACH_RUNWAY, AUSTIN_ROBOTAXI_GEOFENCE, CAPITOL, CONGRESS_ROUTE, CURB_PULL, DROPOFF, GEOFENCE_NOTE, MEGALAMP,
-  PICKUP, ROAD_Y, STOP_INSET, VEHICLE_LABEL, VEHICLE_PLATE, measurePath, pointInRing, project, samplePath,
+  PICKUP, ROAD_Y, STOP_INSET, VEHICLE_LABEL, VEHICLE_PLATE, measurePath, pointInRing, project, samplePathInto,
 } from './geo';
 import {
   CABIN_EYE, CABIN_LOOK, DESTINATIONS, GRAPHICS_KEY, QUALITY_LABEL, adaptQuality, arrivalCopy, blockedSpeed, doorTarget, keepDoorRequest, roadLevel, showContactDisc,
@@ -60,7 +60,8 @@ if (coarsePointer) document.body.dataset.pointer = 'coarse';
 const canvas = document.querySelector<HTMLCanvasElement>('#scene')!;
 const renderer = new THREE.WebGLRenderer({
   canvas,
-  antialias: true,
+  // SMAA handles AA on Medium+; MSAA here would pay twice for the same edge work.
+  antialias: false,
   powerPreference: ios ? 'default' : 'high-performance',
   // The paused harness reads the canvas after a still frame. Live playback leaves the buffer disposable.
   preserveDrawingBuffer: window.__cybercabPause === true,
@@ -78,7 +79,7 @@ renderer.localClippingEnabled = true;
 const scene = new THREE.Scene();
 scene.background = new THREE.Color('#d5dee6');
 scene.fog = new THREE.FogExp2('#c5ced6', 0.00045);
-const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.15, 3200);
+const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.15, 2800);
 
 const sky = new Sky();
 sky.scale.setScalar(45000);
@@ -94,8 +95,7 @@ su.sunPosition.value.copy(sunPosition);
 scene.add(sky);
 const pmrem = new THREE.PMREMGenerator(renderer);
 pmrem.compileEquirectangularShader();
-const skyEnv = pmrem.fromScene(sky as unknown as THREE.Scene, 0.03).texture;
-scene.environment = skyEnv;
+// HDRI load replaces the environment; skip the unused sky PMREM bake at boot.
 scene.environmentIntensity = 0.95;
 
 scene.add(new THREE.HemisphereLight('#d7e0e8', '#5c5954', 0.22));
@@ -124,10 +124,12 @@ const backDir = centerline[0].clone().sub(centerline[1]).normalize();
 centerline.unshift(centerline[0].clone().addScaledVector(backDir, APPROACH_RUNWAY));
 let route = centerline.map((p) => p.clone().setY(ROAD_Y));
 let { cumulative, length: routeLength } = measurePath(route);
-const sample = (d: number) => samplePath(route, cumulative, d);
+const sampleScratch = new THREE.Vector3();
+const curbScratch = new THREE.Vector3();
+const sample = (d: number) => samplePathInto(route, cumulative, d, sampleScratch);
 function curbShift(d: number, meters = CURB_PULL) {
   const p = sample(d);
-  return new THREE.Vector3(Math.cos(p.heading), 0, -Math.sin(p.heading)).multiplyScalar(meters);
+  return curbScratch.set(Math.cos(p.heading), 0, -Math.sin(p.heading)).multiplyScalar(meters);
 }
 const pickupDist = APPROACH_RUNWAY + STOP_INSET;
 const dropoffDist = Math.max(pickupDist + 40, routeLength - STOP_INSET);
@@ -255,8 +257,16 @@ let graphics = graphicsFor(quality, graphicsOverrides);
 let adaptState = emptyAdaptState();
 let stickX = 0;
 let stickY = 0;
+let cabPhaseApplied: Phase | '' = '';
+let hudProgress = -1;
+let hudMph = -1;
+let hudGear = '';
+const hudProgressEl = document.querySelector<HTMLElement>('#progress-fill')!;
+const hudSpeedEl = document.querySelector('#speed')!;
+const hudGearEl = document.querySelector('#gear')!;
 const RIDE_KEY = 'cybercab-ride';
-const pickup = sample(pickupDist);
+const pickupAt = sample(pickupDist);
+const pickup = { position: pickupAt.position.clone(), heading: pickupAt.heading };
 
 let walk = pickup.position.clone().add(curbShift(pickupDist, 1.8));
 walk.y = ROAD_Y + 1.62;
@@ -383,6 +393,8 @@ function toast(text: string) {
 }
 
 function lampForPhase() {
+  if (!cabMounted) return;
+  cabPhaseApplied = phase;
   cab.setPhase(phase);
 }
 
@@ -792,10 +804,9 @@ function applyQuality(next: Quality, announce = true, fromUser = false) {
   lighting.hookObject(scene);
   if (ssaoPass) {
     ssaoPass.enabled = graphics.post && quality !== 'low' && !coarsePointer && !lockSoftware;
-    ssaoPass.enabled = graphics.post && quality !== 'low' && !coarsePointer && !lockSoftware;
-    ssaoPass.kernelRadius = quality === 'ultra' ? 18 : quality === 'high' ? 12 : 6;
+    ssaoPass.kernelRadius = quality === 'ultra' ? 12 : quality === 'high' ? 8 : 5;
     ssaoPass.minDistance = 0.002;
-    ssaoPass.maxDistance = quality === 'ultra' ? 0.28 : quality === 'high' ? 0.16 : 0.08;
+    ssaoPass.maxDistance = quality === 'ultra' ? 0.2 : quality === 'high' ? 0.12 : 0.07;
   }
   bloomPass.enabled = graphics.post && !lockSoftware && !coarsePointer;
   bloomPass.threshold = quality === 'ultra' ? 0.74 : 0.82;
@@ -857,19 +868,24 @@ const cabinLook = new THREE.Vector3();
 const routeSide = new THREE.Vector3();
 const routeTangent = new THREE.Vector3();
 
+const walkHere = new THREE.Vector3();
+const walkAhead = new THREE.Vector3();
+let walkAnchor = 8;
 function constrainWalk() {
-  let best = 8;
+  let best = walkAnchor;
   let bestD = Infinity;
-  const end = Math.max(12, routeLength - 8);
-  for (let d = 8; d <= end; d += 8) {
-    const p = sample(d).position;
+  const start = Math.max(8, walkAnchor - 48);
+  const end = Math.min(Math.max(12, routeLength - 8), walkAnchor + 48);
+  for (let d = start; d <= end; d += 8) {
+    const p = samplePathInto(route, cumulative, d, sampleScratch).position;
     const dx = walk.x - p.x;
     const dz = walk.z - p.z;
     const dist = dx * dx + dz * dz;
     if (dist < bestD) { bestD = dist; best = d; }
   }
-  const here = sample(best);
-  const ahead = sample(Math.min(routeLength - 0.4, best + 6));
+  walkAnchor = best;
+  const here = samplePathInto(route, cumulative, best, walkHere);
+  const ahead = samplePathInto(route, cumulative, Math.min(routeLength - 0.4, best + 6), walkAhead);
   routeTangent.copy(ahead.position).sub(here.position);
   routeTangent.y = 0;
   if (routeTangent.lengthSq() < 1e-6) return;
@@ -1032,11 +1048,14 @@ function update(dt: number) {
   door = stepDoor(door, wantDoor, dt, reduceMotion);
   const curbRate = (appliedCurb - prevAppliedCurb) / Math.max(dt, 1e-4);
   prevAppliedCurb = appliedCurb;
-  cab.setPhase(phase);
+  if (phase !== cabPhaseApplied) {
+    cabPhaseApplied = phase;
+    cab.setPhase(phase);
+  }
   cab.setDoor(door, 1);
   cab.setCabinView(cam === 'cabin');
   cab.update(dt, speedMps, camera.position.distanceTo(cab.group.position), curbRate);
-  cab.group.updateMatrixWorld();
+  if (cam === 'cabin') cab.group.updateMatrixWorld();
   updateCamera(dt);
   pumpAudio();
   clockMinutes += dt * 0.35;
@@ -1049,9 +1068,21 @@ function update(dt: number) {
   sun.target.position.copy(cab.group.position);
   lighting.update(cab.group.position);
   const span = Math.max(1, dropoffDist - pickupDist);
-  document.querySelector<HTMLElement>('#progress-fill')!.style.width = `${THREE.MathUtils.clamp((distance - pickupDist) / span, 0, 1) * 100}%`;
-  document.querySelector('#speed')!.textContent = String(Math.round(speedMps * 2.237)).padStart(2, '0');
-  document.querySelector('#gear')!.textContent = phase === 'ride' && !paused && speedMps > 0.2 ? 'D' : 'P';
+  const progress = THREE.MathUtils.clamp((distance - pickupDist) / span, 0, 1) * 100;
+  const mph = Math.round(speedMps * 2.237);
+  const gear = phase === 'ride' && !paused && speedMps > 0.2 ? 'D' : 'P';
+  if (progress !== hudProgress) {
+    hudProgress = progress;
+    hudProgressEl.style.width = `${progress}%`;
+  }
+  if (mph !== hudMph) {
+    hudMph = mph;
+    hudSpeedEl.textContent = String(mph).padStart(2, '0');
+  }
+  if (gear !== hudGear) {
+    hudGear = gear;
+    hudGearEl.textContent = gear;
+  }
 }
 
 let readoutTimer = 0;
@@ -1069,7 +1100,8 @@ function noteFrame(dt: number) {
   if (!adapted.changed) return;
   applyQuality(adapted.preset, false);
   toast(adapted.changed === 'down' ? 'Graphics eased down to hold the frame rate.' : 'Graphics stepped up.');
-  void restyleWorld();
+  // Restyle only when dropping — stepping up can keep the lighter street budget without a hitch.
+  if (adapted.changed === 'down') void restyleWorld();
 }
 function renderFrame() {
   const cinematic = cabMounted && cam === 'chase' && (quality === 'high' || quality === 'ultra') && !lockSoftware && graphics.post;
@@ -1104,7 +1136,8 @@ function animate(now: number) {
     saveRide();
   }
   frame += 1;
-  renderer.shadowMap.needsUpdate = frame % 2 === 0;
+  const shadowBusy = speedMps > 0.08 || phase === 'dispatch' || phase === 'ride' || door > 0.02;
+  renderer.shadowMap.needsUpdate = graphics.shadows && (shadowBusy ? frame % 2 === 0 : frame % 20 === 0);
   renderFrame();
 }
 camera.position.copy(walk);
@@ -1242,10 +1275,9 @@ void Promise.all([
   world.ready,
   assets.ready,
 ]).then(async ([loaded]) => {
-  setBoot('Dressing the avenue', 88);
-  await restyleWorld();
-  setBoot('Placing the Cybercab', 92);
+  setBoot('Placing the Cybercab', 88);
   mountCab(loaded);
+  setBoot('Dressing the avenue', 94);
   await restyleWorld();
   placeCab(distance, phase === 'pickup' || phase === 'boarded' || phase === 'arrived' ? CURB_PULL : 0);
   walk.y = ROAD_Y + 1.62;
