@@ -491,6 +491,11 @@ export function roadLevel(speed: number): number {
   return Math.min(0.04, (moving / 13.4) * 0.032);
 }
 
+/** HUD gear letter. Drive whenever the cab is rolling; Park when stopped or paused. */
+export function gearLabel(speedMps: number, paused = false): 'D' | 'P' {
+  return !paused && speedMps > 0.2 ? 'D' : 'P';
+}
+
 export function signalOffset(index: number): number {
   return Math.max(0, index) * 7;
 }

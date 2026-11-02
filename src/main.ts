@@ -19,7 +19,7 @@ import {
   PICKUP, ROAD_Y, STOP_INSET, VEHICLE_LABEL, VEHICLE_PLATE, measurePath, pointInRing, project, samplePath,
 } from './geo';
 import {
-  CABIN_EYE, CABIN_LOOK, DESTINATIONS, GRAPHICS_KEY, QUALITY_LABEL, adaptQuality, arrivalCopy, blockedSpeed, doorTarget, keepDoorRequest, roadLevel, showContactDisc,
+  CABIN_EYE, CABIN_LOOK, DESTINATIONS, GRAPHICS_KEY, QUALITY_LABEL, adaptQuality, arrivalCopy, blockedSpeed, doorTarget, gearLabel, keepDoorRequest, roadLevel, showContactDisc,
   emptyAdaptState, forcedQuality, graphicsFor, parseGraphicsStore, parseSnapshot, pixelRatioFor, resolvedQuality,
   stepDoor, togglePhone, type GraphicsToggles, type Quality, type QualityMode, type RideSnapshot,
 } from './logic';
@@ -1047,7 +1047,7 @@ function update(dt: number) {
   const span = Math.max(1, dropoffDist - pickupDist);
   document.querySelector<HTMLElement>('#progress-fill')!.style.width = `${THREE.MathUtils.clamp((distance - pickupDist) / span, 0, 1) * 100}%`;
   document.querySelector('#speed')!.textContent = String(Math.round(speedMps * 2.237)).padStart(2, '0');
-  document.querySelector('#gear')!.textContent = phase === 'ride' && !paused && speedMps > 0.2 ? 'D' : 'P';
+  document.querySelector('#gear')!.textContent = gearLabel(speedMps, paused);
 }
 
 let readoutTimer = 0;

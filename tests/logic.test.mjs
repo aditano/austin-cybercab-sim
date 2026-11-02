@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  CABIN_EYE, CABIN_LOOK, DESTINATIONS, TRAFFIC_LENS_RGB, arrivalCopy, blockedSpeed, defaultQuality, doorTarget, easeVehicleSpeed, keepDoorRequest, litLensIndex, npcHeading, parseSnapshot, pixelRatioFor,
+  CABIN_EYE, CABIN_LOOK, DESTINATIONS, TRAFFIC_LENS_RGB, arrivalCopy, blockedSpeed, defaultQuality, doorTarget, easeVehicleSpeed, gearLabel, keepDoorRequest, litLensIndex, npcHeading, parseSnapshot, pixelRatioFor,
   pointInRing, roadLevel, shadowMapSize, stepDoor, stepPedestrian, stepTrafficDist, togglePhone,
 } from '../src/logic.ts';
 
@@ -88,6 +88,16 @@ test('traffic signal lenses are red, yellow, green from top to bottom', () => {
   const life = fs.readFileSync(new URL('../src/life.ts', import.meta.url), 'utf8');
   assert.match(life, /TRAFFIC_LENS_RGB/);
   assert.match(life, /litLensIndex/);
+});
+
+test('gear shows Drive at dispatch cruise speed, not only during ride', () => {
+  // Dispatch approaches at up to 12.6 m/s (~28 mph) with phase !== 'ride'.
+  assert.equal(gearLabel(12.6, false), 'D');
+  assert.equal(gearLabel(0, false), 'P');
+  assert.equal(gearLabel(8, true), 'P');
+  const main = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  assert.match(main, /gearLabel\(/);
+  assert.doesNotMatch(main, /phase === 'ride' && !paused && speedMps > 0\.2 \? 'D' : 'P'/);
 });
 
 test('phone toggle is ignored during the ride and snapshots reject junk', () => {
