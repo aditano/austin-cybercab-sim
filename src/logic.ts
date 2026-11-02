@@ -495,6 +495,27 @@ export function signalOffset(index: number): number {
   return Math.max(0, index) * 7;
 }
 
+/** Top→bottom US traffic-head lens colors (red, yellow, green). */
+export const TRAFFIC_LENS_RGB = [0xff3b30, 0xf0c43a, 0x32d46a] as const;
+
+export type SignalPhase = 'green' | 'yellow' | 'red';
+
+/** Which lens index lights for a phase (0 top / red, 1 mid / yellow, 2 bottom / green). */
+export function litLensIndex(phase: SignalPhase): 0 | 1 | 2 {
+  switch (phase) {
+    case 'red':
+      return 0;
+    case 'yellow':
+      return 1;
+    case 'green':
+      return 2;
+    default: {
+      const _exhaustive: never = phase;
+      return _exhaustive;
+    }
+  }
+}
+
 export function npcHeading(routeHeading: number, against: boolean): number {
   return against ? routeHeading + Math.PI : routeHeading;
 }

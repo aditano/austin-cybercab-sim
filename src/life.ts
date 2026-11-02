@@ -2,9 +2,12 @@ import * as THREE from 'three';
 import { createPedestrian, createStreetCar } from './vehicle';
 import { kindFromIndex, type SpawnedPerson, type StreetAssets } from './assets';
 import { ROAD_Y } from './geo';
-import { easeVehicleSpeed, npcHeading, signalOffset, stepPedestrian, stepTrafficDist, streetBudget, type Quality } from './logic';
+import {
+  TRAFFIC_LENS_RGB, easeVehicleSpeed, litLensIndex, npcHeading, signalOffset, stepPedestrian, stepTrafficDist, streetBudget,
+  type Quality, type SignalPhase,
+} from './logic';
 
-export type LightPhase = 'green' | 'yellow' | 'red';
+export type LightPhase = SignalPhase;
 
 const CYCLE = 22;
 const paints = [0xe8e4dc, 0x2f3840, 0x8a3b32, 0xc9c3b6, 0x4a5c62, 0xdfe3e0, 0x1e2428, 0x6b7180, 0xbf5700, 0x243026];
@@ -90,7 +93,6 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
   const peds: Ped[] = [];
   const parked: THREE.Object3D[] = [];
 
-  const colors = [0x32d46a, 0xf0c43a, 0xff3b30];
   let time = 0;
   const reduceMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -189,10 +191,11 @@ export function createCityLife(scene: THREE.Scene, route: THREE.Vector3[], cumul
       time += dt;
       for (const signal of signals) {
         const phase = lightAt(time, signalOffset(crossings.indexOf(signal.distance)));
-        const idx = phase === 'green' ? 2 : phase === 'yellow' ? 1 : 0;
+        const idx = litLensIndex(phase);
         signal.lamps.forEach((mat, i) => {
-          mat.emissive.setHex(i === idx ? colors[i] : 0x111111);
-          mat.color.setHex(i === idx ? colors[i] : 0x111111);
+          const on = i === idx ? TRAFFIC_LENS_RGB[i] : 0x111111;
+          mat.emissive.setHex(on);
+          mat.color.setHex(on);
           mat.emissiveIntensity = i === idx ? 2.6 : 0.12;
         });
       }
