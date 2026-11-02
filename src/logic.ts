@@ -93,6 +93,11 @@ export const DESTINATIONS: { id: string; name: string; lon: number; lat: number 
   { id: 'roundrock', name: 'Round Rock', lon: -97.678, lat: 30.508 },
 ];
 
+/** Resolve a phone destination id; unknown ids fall back to Congress & 7th. */
+export function destinationById(id: string): (typeof DESTINATIONS)[number] {
+  return DESTINATIONS.find((item) => item.id === id) ?? DESTINATIONS[0];
+}
+
 export function pointInRing(lon: number, lat: number, ring: readonly (readonly [number, number])[]): boolean {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
