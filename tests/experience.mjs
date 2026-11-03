@@ -53,6 +53,10 @@ assert.ok(overlap < 50, `phone overlaps the speedometer by ${overlap} px²`);
 
 await page.selectOption('#destination', 'roundrock');
 assert.equal(await page.locator('#request').isDisabled(), true);
+await page.selectOption('#destination', 'airport');
+assert.equal(await page.locator('#request').isDisabled(), false);
+assert.match(await page.locator('.route-row').nth(1).innerText(), /Austin-Bergstrom/);
+assert.equal(await page.locator('#destination').inputValue(), 'airport');
 await page.selectOption('#destination', 'congress');
 assert.equal(await page.locator('#request').isDisabled(), false);
 

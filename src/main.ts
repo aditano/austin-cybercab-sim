@@ -15,11 +15,11 @@ import { createCityLife } from './life';
 import { createStreetAssets } from './assets';
 import { createLighting } from './lighting';
 import {
-  APPROACH_RUNWAY, AUSTIN_ROBOTAXI_GEOFENCE, CAPITOL, CONGRESS_ROUTE, CURB_PULL, DROPOFF, GEOFENCE_NOTE, MEGALAMP,
+  APPROACH_RUNWAY, AUSTIN_ROBOTAXI_GEOFENCE, CAPITOL, CONGRESS_ROUTE, CURB_PULL, GEOFENCE_NOTE, MEGALAMP,
   PICKUP, ROAD_Y, STOP_INSET, VEHICLE_LABEL, VEHICLE_PLATE, measurePath, pointInRing, project, samplePath,
 } from './geo';
 import {
-  CABIN_EYE, CABIN_LOOK, DESTINATIONS, GRAPHICS_KEY, QUALITY_LABEL, adaptQuality, arrivalCopy, blockedSpeed, doorTarget, keepDoorRequest, roadLevel, showContactDisc,
+  CABIN_EYE, CABIN_LOOK, DESTINATIONS, GRAPHICS_KEY, QUALITY_LABEL, adaptQuality, arrivalCopy, blockedSpeed, destinationById, doorTarget, gearLabel, keepDoorRequest, roadLevel, showContactDisc,
   emptyAdaptState, forcedQuality, graphicsFor, parseGraphicsStore, parseSnapshot, pixelRatioFor, resolvedQuality,
   stepDoor, togglePhone, type GraphicsToggles, type Quality, type QualityMode, type RideSnapshot,
 } from './logic';
@@ -42,7 +42,7 @@ app.innerHTML = `<canvas id="scene"></canvas><div class="vignette"></div>
 </div>
 <aside class="chapter"><span class="eyebrow">CONGRESS AVENUE · AUSTIN</span><h1>Golden hour<br>on Congress.</h1><p>The Capitol closes the avenue.<br>Lady Bird Lake is behind you.<br>Match the Megalamp, then ride.</p><div class="chapter-line"></div><span class="small-label">01 / CONFIRM YOUR RIDE</span></aside>
 <div class="location"><span class="location-dot">⌖</span><div><b id="location-name">Congress & 2nd</b><span id="location-detail">DOWNTOWN · CAPITOL NORTH · LAKE SOUTH</span></div></div>
-<div class="hud"><div class="speedo"><b id="speed">00</b><small>MPH</small><span id="gear">P</span></div></div>
+<div class="hud"><div class="speedo" role="status" aria-live="polite" aria-atomic="true" aria-label="Vehicle speed and gear"><b id="speed">00</b><small>MPH</small><span id="gear" aria-label="Gear">P</span></div></div>
 <aside id="phone" class="phone"><div id="phone-map" class="phone-map"></div><div class="phone-top"><b class="js-clock">6:42</b><div class="island"></div><span>5G</span></div><div class="sheet"><div class="sheet-handle"></div><div class="app-bar"><span class="avatar" aria-hidden="true"></span><b>ROBOTAXI</b><button id="alerts" type="button" class="bell" aria-label="Alerts"></button></div><div id="phone-body"></div><div id="phone-actions"></div></div><div class="home-bar"></div></aside>
 <section id="cabin" class="cabin-panel" hidden></section>
 <div id="toast" role="status"></div>
@@ -388,7 +388,8 @@ function lampForPhase() {
 
 function renderUI() {
   lampForPhase();
-  document.querySelector('#location-name')!.textContent = phase === 'complete' || phase === 'arrived' || phase === 'exited' ? DROPOFF.name : PICKUP.name;
+  const dest = destinationById(destinationId);
+  document.querySelector('#location-name')!.textContent = phase === 'complete' || phase === 'arrived' || phase === 'exited' ? dest.name : PICKUP.name;
   document.querySelector('#location-detail')!.textContent = phase === 'explore'
     ? 'DOWNTOWN · CAPITOL NORTH · LAKE SOUTH'
     : phase === 'dispatch' || phase === 'pickup' ? 'MATCH MEGALAMP AND PLATE'
@@ -403,7 +404,6 @@ function renderUI() {
   cabin.classList.toggle('riding', phase === 'ride');
   const map = mapMarkup((distance - pickupDist) / Math.max(1, dropoffDist - pickupDist));
   phoneMap.innerHTML = map;
-  const dest = DESTINATIONS.find((item) => item.id === destinationId) ?? DESTINATIONS[0];
   const destInside = pointInRing(dest.lon, dest.lat, AUSTIN_ROBOTAXI_GEOFENCE);
   const inside = pointInRing(PICKUP.lon, PICKUP.lat, AUSTIN_ROBOTAXI_GEOFENCE) && destInside;
   const canStart = belted && door < 0.08;
@@ -442,7 +442,7 @@ function renderUI() {
   if (phase === 'pickup') actions = `<div class="enter-row"><button class="text-btn" id="honk" type="button">Honk</button><button class="text-btn" id="flash" type="button">Flash</button></div><button class="primary" id="enter" type="button">Open doors</button><button class="text-btn" id="cancel" type="button">Cancel ride</button>${walkBtn}`;
   if (phase === 'boarded') body.innerHTML = `<h2>Buckle up</h2><p class="phone-sub">The door closes once everyone is buckled. Then tap Start Ride here or on the cabin screen.</p>`;
   if (phase === 'boarded') actions = `<button class="secondary" id="buckle-phone">${belted ? 'Seatbelt fastened' : 'Fasten seatbelt'}</button><button class="primary" id="start-phone" ${canStart ? '' : 'disabled'}>${belted && !canStart ? 'Closing door…' : 'Start Ride'}</button>`;
-  if (phase === 'arrived') body.innerHTML = `<h2>You've arrived</h2><p class="phone-sub">${DROPOFF.name}. Parked with hazards on.</p>`;
+  if (phase === 'arrived') body.innerHTML = `<h2>You've arrived</h2><p class="phone-sub">${dest.name}. Parked with hazards on.</p>`;
   if (phase === 'arrived') actions = '<button class="primary" id="exit-phone">Open door</button>';
   if (phase === 'exited') body.innerHTML = `<h2>How was your ride?</h2>
     <div class="stars" role="group" aria-label="Rate this ride">${[1, 2, 3, 4, 5].map((n) => `<button type="button" class="star" data-star="${n}" aria-label="${n} star">★</button>`).join('')}</div>
@@ -464,7 +464,7 @@ function renderUI() {
     cabin.innerHTML = `<div class="cabin-header"><span class="cabin-status">${rideStatus}</span><span class="js-clock">6:42</span><span>${temperature}°</span><span>${belted ? 'BELT' : 'UNBUCKLED'}</span><span>CAM</span></div>
       <div class="cabin-grid"><div class="cabin-map">${map}</div>
       <div class="cabin-copy"><small>${kicker}</small>
-      <h2>${DROPOFF.name}</h2>
+      <h2>${dest.name}</h2>
       <p>${phase === 'boarded' ? boardedCopy : phase === 'arrived' ? 'In Park. Hazards on. Open the door, step out, then complete the trip in the app.' : `<span id="ride-eta">${eta} min · ${remainingM / 1000 > 0 ? (remainingM / 1000).toFixed(2) : '0.00'} km remaining</span>`}</p>
       <div class="cabin-actions">${phase === 'boarded' ? `<button class="secondary" id="buckle">${belted ? 'Seatbelt fastened' : 'Fasten seatbelt'}</button><button class="primary" id="start-ride" ${canStart ? '' : 'disabled'}>Start Ride</button>` : phase === 'arrived' ? '<button class="primary" id="exit-cabin">Open door</button>' : `<button class="secondary" id="pause">${paused ? 'Resume ride' : 'Pull over'}</button>`}</div>
       </div></div>
@@ -1047,7 +1047,7 @@ function update(dt: number) {
   const span = Math.max(1, dropoffDist - pickupDist);
   document.querySelector<HTMLElement>('#progress-fill')!.style.width = `${THREE.MathUtils.clamp((distance - pickupDist) / span, 0, 1) * 100}%`;
   document.querySelector('#speed')!.textContent = String(Math.round(speedMps * 2.237)).padStart(2, '0');
-  document.querySelector('#gear')!.textContent = phase === 'ride' && !paused && speedMps > 0.2 ? 'D' : 'P';
+  document.querySelector('#gear')!.textContent = gearLabel(speedMps, paused);
 }
 
 let readoutTimer = 0;

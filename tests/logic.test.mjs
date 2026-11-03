@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import {
-  CABIN_EYE, CABIN_LOOK, DESTINATIONS, arrivalCopy, blockedSpeed, defaultQuality, doorTarget, easeVehicleSpeed, keepDoorRequest, npcHeading, parseSnapshot, pixelRatioFor,
+  CABIN_EYE, CABIN_LOOK, DESTINATIONS, TRAFFIC_LENS_RGB, arrivalCopy, blockedSpeed, defaultQuality, destinationById, doorTarget, easeVehicleSpeed, gearLabel, keepDoorRequest, litLensIndex, npcHeading, parseSnapshot, pixelRatioFor,
   pointInRing, roadLevel, shadowMapSize, stepDoor, stepPedestrian, stepTrafficDist, togglePhone,
 } from '../src/logic.ts';
 
@@ -78,6 +78,36 @@ test('sample destinations honor the service-area ring', () => {
   assert.equal(pointInRing(byId.congress.lon, byId.congress.lat, ring), true);
   assert.equal(pointInRing(byId.airport.lon, byId.airport.lat, ring), true);
   assert.equal(pointInRing(byId.roundrock.lon, byId.roundrock.lat, ring), false);
+});
+
+test('airport destination selection is honored in drop-off copy', () => {
+  assert.equal(destinationById('airport').name, 'Austin-Bergstrom');
+  assert.equal(destinationById('airport').id, 'airport');
+  assert.equal(destinationById('missing').id, 'congress');
+  const main = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  assert.match(main, /destinationById\(/);
+  assert.doesNotMatch(main, /You've arrived<\/h2><p class="phone-sub">\$\{DROPOFF\.name\}/);
+  assert.doesNotMatch(main, /<h2>\$\{DROPOFF\.name\}<\/h2>/);
+});
+
+test('traffic signal lenses are red, yellow, green from top to bottom', () => {
+  assert.deepEqual([...TRAFFIC_LENS_RGB], [0xff3b30, 0xf0c43a, 0x32d46a]);
+  assert.equal(litLensIndex('red'), 0);
+  assert.equal(litLensIndex('yellow'), 1);
+  assert.equal(litLensIndex('green'), 2);
+  const life = fs.readFileSync(new URL('../src/life.ts', import.meta.url), 'utf8');
+  assert.match(life, /TRAFFIC_LENS_RGB/);
+  assert.match(life, /litLensIndex/);
+});
+
+test('gear shows Drive at dispatch cruise speed, not only during ride', () => {
+  // Dispatch approaches at up to 12.6 m/s (~28 mph) with phase !== 'ride'.
+  assert.equal(gearLabel(12.6, false), 'D');
+  assert.equal(gearLabel(0, false), 'P');
+  assert.equal(gearLabel(8, true), 'P');
+  const main = fs.readFileSync(new URL('../src/main.ts', import.meta.url), 'utf8');
+  assert.match(main, /gearLabel\(/);
+  assert.doesNotMatch(main, /phase === 'ride' && !paused && speedMps > 0\.2 \? 'D' : 'P'/);
 });
 
 test('phone toggle is ignored during the ride and snapshots reject junk', () => {

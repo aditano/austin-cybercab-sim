@@ -93,6 +93,11 @@ export const DESTINATIONS: { id: string; name: string; lon: number; lat: number 
   { id: 'roundrock', name: 'Round Rock', lon: -97.678, lat: 30.508 },
 ];
 
+/** Resolve a phone destination id; unknown ids fall back to Congress & 7th. */
+export function destinationById(id: string): (typeof DESTINATIONS)[number] {
+  return DESTINATIONS.find((item) => item.id === id) ?? DESTINATIONS[0];
+}
+
 export function pointInRing(lon: number, lat: number, ring: readonly (readonly [number, number])[]): boolean {
   let inside = false;
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
@@ -491,8 +496,34 @@ export function roadLevel(speed: number): number {
   return Math.min(0.04, (moving / 13.4) * 0.032);
 }
 
+/** HUD gear letter. Drive whenever the cab is rolling; Park when stopped or paused. */
+export function gearLabel(speedMps: number, paused = false): 'D' | 'P' {
+  return !paused && speedMps > 0.2 ? 'D' : 'P';
+}
+
 export function signalOffset(index: number): number {
   return Math.max(0, index) * 7;
+}
+
+/** Top→bottom US traffic-head lens colors (red, yellow, green). */
+export const TRAFFIC_LENS_RGB = [0xff3b30, 0xf0c43a, 0x32d46a] as const;
+
+export type SignalPhase = 'green' | 'yellow' | 'red';
+
+/** Which lens index lights for a phase (0 top / red, 1 mid / yellow, 2 bottom / green). */
+export function litLensIndex(phase: SignalPhase): 0 | 1 | 2 {
+  switch (phase) {
+    case 'red':
+      return 0;
+    case 'yellow':
+      return 1;
+    case 'green':
+      return 2;
+    default: {
+      const _exhaustive: never = phase;
+      return _exhaustive;
+    }
+  }
 }
 
 export function npcHeading(routeHeading: number, against: boolean): number {
